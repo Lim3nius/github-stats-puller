@@ -1,0 +1,5 @@
+downloaded-events
+*.egg-info
+__pycache__
+
+client-state.json

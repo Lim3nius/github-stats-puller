@@ -1,0 +1,19 @@
+[project]
+name = "github-api-stats-puller"
+version = "0.1.0"
+description = "GitHub API statistics puller and metrics service"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn>=0.24.0",
+    "httpx>=0.25.0",
+    "pydantic>=2.5.0",
+    "python-dateutil>=2.8.2",
+    "plotly>=5.17.0",
+]
+
+[project.scripts]
+github-stats = "github_stats.main:main"
+
+[tool.uv]
+package = true
