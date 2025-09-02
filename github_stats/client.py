@@ -35,7 +35,7 @@ class GitHubEventsClient:
                 return False
 
             if "x-poll-interval" in response.headers:
-                self.state.poll_interval = int(response.headers["x-poll-interval"])
+                self.state.poll_interval_sec = int(response.headers["x-poll-interval"])
 
             return True
 
@@ -63,7 +63,7 @@ class GitHubEventsClient:
                 self.state.last_modified = response.headers["last-modified"]
 
             if "x-poll-interval" in response.headers:
-                self.state.poll_interval = int(response.headers["x-poll-interval"])
+                self.state.poll_interval_sec = int(response.headers["x-poll-interval"])
 
             poll_ts = datetime.now(timezone.utc)
             self.state.last_poll = poll_ts
