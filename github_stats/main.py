@@ -1,8 +1,9 @@
-import asyncio
 import os
 import sys
+import time
 from loguru import logger
 from .client import GitHubEventsClient
+from dotenv import load_dotenv
 
 
 def setup_logging():
@@ -11,21 +12,24 @@ def setup_logging():
     logger.add(sys.stdout, level=log_level)
 
 
-async def async_main():
+def main_loop():
     setup_logging()
     logger.info("Starting GitHub Events polling client")
+
+    load_dotenv("gh.env")
 
     client = GitHubEventsClient()
 
     while True:
-        events = await client.poll_events()
-        _ = events
+        events = client.poll_events()
+        if events:
+            logger.info(f"Downloaded {len(events)} events")
 
-        await asyncio.sleep(client.state.poll_interval_sec)
+        time.sleep(client.state.poll_interval_sec)
 
 
 def main():
-    asyncio.run(async_main())
+    main_loop()
 
 
 if __name__ == "__main__":

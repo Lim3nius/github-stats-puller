@@ -1,23 +1,35 @@
 import json
-import httpx
+import os
 from pathlib import Path
-from datetime import datetime, timezone
-from typing import Any
+from datetime import datetime, timezone, tzinfo
+from typing import Any, List
 from loguru import logger
+from github import Github
+from github.Event import Event
+import time
 
 from .models import ClientState
 
 
 class GitHubEventsClient:
     def __init__(self, state_file: str = "client-state.json"):
-        self.url = "https://api.github.com/events"
         self.state_file = Path(state_file)
         self.events_dir = Path("downloaded-events")
 
         self.events_dir.mkdir(exist_ok=True)
 
+        token = os.getenv("GITHUB_TOKEN")
+        if not token:
+            logger.warning("GITHUB_TOKEN not found, using unauthenticated requests (rate limited)")
+            self.github = Github()
+        else:
+            self.github = Github(token)
+
         self.state = self._load_state()
-        logger.debug(f"Initialized client with state file: {state_file}, poll interval: {self.state.poll_interval_sec}s")
+
+        logger.debug(
+            f"Initialized PyGitHub client with state file: {state_file}, poll interval: {self.state.poll_interval_sec}s"
+        )
 
     def _load_state(self) -> ClientState:
         if self.state_file.exists():
@@ -30,72 +42,82 @@ class GitHubEventsClient:
         self.state_file.write_text(self.state.model_dump_json())
         logger.debug(f"State saved to {self.state_file}")
 
-    async def check_for_updates(self) -> bool:
-        headers: dict[str, str] = {}
-        if self.state.etag:
-            headers["If-None-Match"] = self.state.etag
+    def _check_rate_limit(self):
+        """Check and respect GitHub API rate limits"""
+        try:
+            rate_limit = self.github.get_rate_limit()
+            logger.info(rate_limit)
+            print(rate_limit)
+            # remaining = rate_limit.core.remaining
+            # reset_time = rate_limit.core.reset.timestamp()
+            # logger.debug(f"Rate limit: {remaining} requests remaining, resets at {reset_time}")
 
-        logger.debug("Checking for updates with HEAD request")
-        async with httpx.AsyncClient() as client:
-            response = await client.head(self.url, headers=headers)
+            if rate_limit.rate.remaining < 10:  # Conservative threshold
+                sleep_time = (rate_limit.rate.reset - datetime.now(timezone.utc)).total_seconds()
+                if sleep_time > 0:
+                    logger.warning(f"Rate limit low, sleeping for {sleep_time} seconds")
+                    time.sleep(sleep_time)
 
-            if response.status_code == 304:
-                logger.debug("No updates available (HTTP 304)")
-                return False
+        except Exception as e:
+            logger.warning(f"Could not check rate limit: {e}")
 
-            if "x-poll-interval" in response.headers:
-                new_interval = int(response.headers["x-poll-interval"])
-                if new_interval != self.state.poll_interval_sec:
-                    logger.info(f"Poll interval updated from {self.state.poll_interval_sec}s to {new_interval}s")
-                    self.state.poll_interval_sec = new_interval
+    def _get_public_events(self) -> List[Event]:
+        """Get public events using PyGitHub"""
+        try:
+            # PyGitHub doesn't support conditional requests directly,
+            # but we can still fetch events and compare timestamps
+            events = list(self.github.get_events())
 
-            logger.debug("Updates available")
-            return True
+            return events
 
-    async def fetch_events(self) -> Any:
-        headers: dict[str, str] = {}
+        except Exception as e:
+            logger.error(f"Error getting public events: {e}")
+            raise
 
-        if self.state.etag:
-            headers["If-None-Match"] = self.state.etag
+    def poll_events(self) -> List[Any]:
+        """Poll GitHub events using PyGitHub"""
+        logger.debug("Polling GitHub events using PyGitHub")
 
-        if self.state.last_modified:
-            headers["If-Modified-Since"] = self.state.last_modified
+        self._check_rate_limit()
 
-        logger.debug("Fetching events with GET request")
-        async with httpx.AsyncClient() as client:
-            response = await client.get(self.url, headers=headers)
+        try:
+            events = self._get_public_events()
 
-            if response.status_code == 304:
-                logger.debug("No new events (HTTP 304)")
-                return None
+            if not events:
+                logger.debug("No events available")
+                self.state.last_poll = datetime.now(timezone.utc)
+                self._save_state()
+                return []
 
-            response.raise_for_status()
+            # Filter new events based on last poll time if available
+            if self.state.last_poll:
+                new_events = []
+                for event in events:
+                    if event.get("created_at"):
+                        event_time = datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))
+                        if event_time > self.state.last_poll:
+                            new_events.append(event)
+                events = new_events
 
-            if "etag" in response.headers:
-                self.state.etag = response.headers["etag"]
+            if events:
+                poll_ts = datetime.now(timezone.utc)
+                self.state.last_poll = poll_ts
 
-            if "last-modified" in response.headers:
-                self.state.last_modified = response.headers["last-modified"]
+                timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
+                filename = self.events_dir.joinpath(f"{timestamp}.json")
 
-            if "x-poll-interval" in response.headers:
-                self.state.poll_interval_sec = int(response.headers["x-poll-interval"])
+                filename.write_text(json.dumps(events, default=str, indent=2))
+                logger.info(f"Saved {len(events)} events to {filename}")
 
-            poll_ts = datetime.now(timezone.utc)
-            self.state.last_poll = poll_ts
+                self._save_state()
 
-            timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
-            filename = self.events_dir.joinpath(f"{timestamp}.json")
+                return events
+            else:
+                logger.debug("No new events since last poll")
+                self.state.last_poll = datetime.now(timezone.utc)
+                self._save_state()
+                return []
 
-            events_data = response.json()
-            filename.write_text(json.dumps(events_data))
-            
-            logger.info(f"Saved {len(events_data)} events to {filename}")
-
-            self._save_state()
-
-            return events_data
-
-    async def poll_events(self) -> Any:
-        if await self.check_for_updates():
-            return await self.fetch_events()
-        return None
+        except Exception as e:
+            logger.error(f"Error polling events: {e}")
+            return []
