@@ -19,8 +19,7 @@ async def async_main():
 
     while True:
         events = await client.poll_events()
-        if events:
-            logger.info(f"Downloaded {len(events)} events")
+        _ = events
 
         await asyncio.sleep(client.state.poll_interval_sec)
 
