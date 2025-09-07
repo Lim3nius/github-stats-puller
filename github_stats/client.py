@@ -89,15 +89,6 @@ class GitHubEventsClient:
                 self._save_state()
                 return []
 
-            # Filter new events based on last poll time if available
-            # if self.state.last_poll:
-            #     new_events: list[Event] = []
-            #     for event in events:
-            #         event_time = event.created_at
-            #         if event_time > self.state.last_poll:
-            #             new_events.append(event)
-            #     events = new_events
-
             poll_ts = datetime.now(timezone.utc)
             self.state.last_poll = poll_ts
             self.state.next_poll_time_ts = poll_ts + timedelta(seconds=self.state.poll_interval_sec)
@@ -109,8 +100,14 @@ class GitHubEventsClient:
             filename.write_text(json.dumps(raw_events))
             logger.info(f"Saved {len(events)} events to {filename}")
 
+            logger.debug(f"event count before deduplication based on event_id: {len(events)}")
+
+            event_id_map: dict[str, Event] = {event.id: event for event in events}
+
+            logger.debug(f"unique event ids: {len(event_id_map.keys())}")
+
             # Store events in database for server access
-            inserted_count = get_database_service().insert_events(events)
+            inserted_count = get_database_service().insert_events(list(event_id_map.values()))
             logger.debug(f"Inserted {inserted_count} events into database")
 
             self._save_state()
