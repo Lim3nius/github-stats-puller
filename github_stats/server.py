@@ -61,18 +61,6 @@ class RootResponse(TypedDict):
     message: str
 
 
-class VisualizationData(TypedDict):
-    labels: list[str]
-    values: list[int]
-
-
-class VisualizationResponse(TypedDict):
-    chart_type: str
-    title: str
-    data: VisualizationData
-    total_events: int
-
-
 class RepoEventsResponse(TypedDict):
     repository: str
     event_count: int
@@ -118,19 +106,6 @@ async def get_event_counts(offset: int = Query(..., description="Time offset in 
     return EventCountResponse(
         offset_minutes=result.offset_minutes, event_counts=result.event_counts, total_events=result.total_events
     )
-
-
-@app.get("/metrics/visualization")
-async def get_visualization(offset: int = Query(60, description="Time offset in minutes")) -> VisualizationResponse:
-    """Bonus endpoint: Return visualization data"""
-    result = get_database_service().get_events_by_type_and_offset(offset)
-
-    return {
-        "chart_type": "bar",
-        "title": f"GitHub Events by Type (Last {offset} minutes)",
-        "data": {"labels": list(result.event_counts.keys()), "values": list(result.event_counts.values())},
-        "total_events": result.total_events,
-    }
 
 
 @app.get("/health", response_model=DatabaseHealth)
