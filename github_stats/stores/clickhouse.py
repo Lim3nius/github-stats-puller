@@ -9,6 +9,8 @@ from loguru import logger
 
 from .base import DatabaseService, EventData, EventCountsByType, DatabaseHealth
 
+from clickhouse_driver import Client
+
 
 class ClickHouseDatabaseService(DatabaseService):
     """ClickHouse implementation of DatabaseService"""
@@ -21,8 +23,6 @@ class ClickHouseDatabaseService(DatabaseService):
         password: str = "github_app_pass",
         database: str = "github_stats",
     ):
-        from clickhouse_driver import Client
-
         self.filtered_event_types = {"WatchEvent", "PullRequestEvent", "IssuesEvent"}
 
         try:
@@ -45,8 +45,39 @@ class ClickHouseDatabaseService(DatabaseService):
             action=getattr(event.payload, "action", None),
         )
 
+    def _filter_duplicate_events(self, events: List[Event]) -> List[Event]:
+        """Filter out events that already exist in database (keep oldest)"""
+        if not events:
+            return []
+
+        event_ids = [event.id for event in events]
+        existing_query = """
+        SELECT DISTINCT event_id 
+        FROM events 
+        WHERE event_id IN %(event_ids)s
+        """
+
+        try:
+            existing_result = self.client.execute(existing_query, {"event_ids": event_ids})
+            existing_event_ids = {row[0] for row in existing_result}
+
+            logger.debug(f"Found {len(existing_result)} existing events in database")
+
+            # Filter out events that already exist (keep oldest = skip duplicates)
+            new_events = [event for event in events if event.id not in existing_event_ids]
+
+            if len(new_events) < len(events):
+                logger.debug(f"Filtered out {len(events) - len(new_events)} duplicate events")
+
+            return new_events
+
+        except Exception as e:
+            logger.warning(f"Failed to check for duplicate events: {e}")
+            # Fallback to returning all events if deduplication check fails
+            return events
+
     def insert_events(self, events: List[Event]) -> int:
-        """Insert GitHub events and return count of inserted records"""
+        """Insert GitHub events and return count of inserted records (deduplicates to keep oldest)"""
         if not events:
             return 0
 
@@ -55,7 +86,14 @@ class ClickHouseDatabaseService(DatabaseService):
         if not filtered_events:
             return 0
 
-        event_data_list = [self._event_to_data(event) for event in filtered_events]
+        # Remove duplicates (keep oldest)
+        new_events = self._filter_duplicate_events(filtered_events)
+
+        if not new_events:
+            logger.debug("All events already exist, skipping duplicates")
+            return 0
+
+        event_data_list = [self._event_to_data(event) for event in new_events]
 
         # Prepare data for ClickHouse insertion using parameter substitution
         rows: list[dict[str, Any]] = []
@@ -113,33 +151,40 @@ class ClickHouseDatabaseService(DatabaseService):
             raise
 
     def get_pull_request_events_for_repo(self, repo_name: str) -> List[EventData]:
-        """Get all PullRequestEvent events for a specific repository"""
-        query = """
-        SELECT 
-            event_id, event_type, repo_name, repo_id, 
-            created_at_ts, action, ingested_at
+        """Get minimal PR event data - only timestamps needed for calculations"""
+        # First try to get from aggregated table for count
+        count_query = """
+        SELECT sum(pr_count) 
+        FROM pr_metrics_agg 
+        WHERE repo_name = %(repo_name)s
+        """
+
+        # Get only timestamps from events table (minimal data)
+        events_query = """
+        SELECT created_at_ts
         FROM events 
-        WHERE event_type = 'PullRequestEvent' AND repo_name = %(repo_name)s
+        WHERE event_type = 'PullRequestEvent' 
+          AND repo_name = %(repo_name)s
+          AND action = 'opened'
         ORDER BY created_at_ts
         """
 
         try:
-            result = self.client.execute(query, {"repo_name": repo_name})
+            result = self.client.execute(events_query, {"repo_name": repo_name})
+            logger.debug(f"received {len(result)} PR timestamps")
 
-            logger.debug(f"received {len(result)} results")
-
+            # Return minimal EventData - only timestamps are actually used
             events = []
             for row in result:
-                event_id, event_type, repo_name, repo_id, created_at_ts, action, ingested_at = row
                 events.append(
                     EventData(
-                        event_id=event_id,
-                        event_type=event_type,
+                        event_id="",
+                        event_type="PullRequestEvent",
                         repo_name=repo_name,
-                        repo_id=repo_id,
-                        created_at_ts=created_at_ts,
-                        action=action,
-                        ingested_at=ingested_at,
+                        repo_id=0,
+                        created_at_ts=row[0],
+                        action="opened",
+                        ingested_at=row[0],
                     )
                 )
 
@@ -150,19 +195,46 @@ class ClickHouseDatabaseService(DatabaseService):
             raise
 
     def calculate_avg_pr_time(self, repo_name: str) -> float:
-        """Calculate average time between pull requests for a repository in seconds"""
-        pr_events = self.get_pull_request_events_for_repo(repo_name)
+        """Calculate average time between pull requests using pre-aggregated data"""
+        # Use the pre-aggregated pr_metrics_agg table for faster calculation
+        query = """
+        SELECT 
+            sum(pr_count) as total_prs,
+            min(first_pr_ts) as earliest_pr,
+            max(last_pr_ts) as latest_pr
+        FROM pr_metrics_agg
+        WHERE repo_name = %(repo_name)s
+        """
 
-        if len(pr_events) < 2:
+        try:
+            result = self.client.execute(query, {"repo_name": repo_name})
+
+            if result and result[0][0] and result[0][0] > 1:
+                total_prs = result[0][0]
+                earliest_pr = result[0][1]
+                latest_pr = result[0][2]
+
+                # Calculate average seconds between PRs
+                total_duration_sec = (latest_pr - earliest_pr).total_seconds()
+                avg_seconds = total_duration_sec / (total_prs - 1)
+                return avg_seconds
+
             return 0.0
 
-        # Events are already sorted by created_at_ts from query
-        time_diffs: list[float] = []
-        for i in range(1, len(pr_events)):
-            diff = (pr_events[i].created_at_ts - pr_events[i - 1].created_at_ts).total_seconds()
-            time_diffs.append(diff)
+        except Exception as e:
+            logger.error(f"Failed to calculate avg PR time from aggregated data: {e}")
+            # Fallback to raw events table if aggregated data fails
+            pr_events = self.get_pull_request_events_for_repo(repo_name)
 
-        return sum(time_diffs) / len(time_diffs) if time_diffs else 0.0
+            if len(pr_events) < 2:
+                return 0.0
+
+            time_diffs: list[float] = []
+            for i in range(1, len(pr_events)):
+                diff = (pr_events[i].created_at_ts - pr_events[i - 1].created_at_ts).total_seconds()
+                time_diffs.append(diff)
+
+            return sum(time_diffs) / len(time_diffs) if time_diffs else 0.0
 
     def get_health_status(self) -> DatabaseHealth:
         """Get database connection and health information"""
@@ -185,15 +257,6 @@ class ClickHouseDatabaseService(DatabaseService):
         except Exception as e:
             logger.error(f"ClickHouse health check failed: {e}")
             return DatabaseHealth(is_connected=False, backend_type="clickhouse", total_events=0, last_event_ts=None)
-
-    def get_total_event_count(self) -> int:
-        """Get total number of events stored"""
-        try:
-            result = self.client.execute("SELECT count(*) FROM events")
-            return result[0][0] if result else 0
-        except Exception as e:
-            logger.error(f"Failed to get total event count from ClickHouse: {e}")
-            return 0
 
     def get_events_count_by_repo(self, repo_name: str) -> int:
         """Get total event count for a specific repository"""

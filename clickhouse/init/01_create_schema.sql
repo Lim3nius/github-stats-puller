@@ -33,11 +33,12 @@ CREATE TABLE IF NOT EXISTS events (
 ENGINE = MergeTree()
 -- Partition by date for time-based queries and efficient cleanup
 PARTITION BY toYYYYMM(created_at_ts)
--- Primary key optimized for assignment queries:
--- 1. Repository-based queries (average PR times per repo)  
--- 2. Time-based queries (events by offset)
--- 3. Event type filtering
-ORDER BY (repo_name, event_type, created_at_ts)
+-- Primary key optimized for deduplication AND assignment queries:
+-- 1. event_id first for fast deduplication lookups
+-- 2. Repository-based queries (average PR times per repo)  
+-- 3. Time-based queries (events by offset)
+-- 4. Event type filtering
+ORDER BY (event_id, repo_name, event_type, created_at_ts)
 -- TTL for data cleanup (keep 1 year of data)
 TTL created_at_ts + INTERVAL 1 YEAR;
 
