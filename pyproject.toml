@@ -16,6 +16,7 @@ dependencies = [
 
 [project.scripts]
 github-stats = "github_stats.main:main"
+github-api = "github_stats.app:main"
 
 [tool.uv]
 package = true

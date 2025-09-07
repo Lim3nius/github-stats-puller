@@ -9,6 +9,7 @@ from github.Event import Event
 import time
 
 from .models import ClientState
+from .storage import event_storage
 
 
 class GitHubEventsClient:
@@ -86,19 +87,13 @@ class GitHubEventsClient:
                 return []
 
             # Filter new events based on last poll time if available
-            if self.state.last_poll:
-                new_events: list[Event] = []
-                for event in events:
-                    event_time = event.created_at
-                    if event_time > self.state.last_poll:
-                        new_events.append(event)
-                events = new_events
-
-            if not events:
-                logger.debug("No new events since last poll")
-                self.state.last_poll = datetime.now(timezone.utc)
-                self._save_state()
-                return []
+            # if self.state.last_poll:
+            #     new_events: list[Event] = []
+            #     for event in events:
+            #         event_time = event.created_at
+            #         if event_time > self.state.last_poll:
+            #             new_events.append(event)
+            #     events = new_events
 
             poll_ts = datetime.now(timezone.utc)
             self.state.last_poll = poll_ts
@@ -106,8 +101,12 @@ class GitHubEventsClient:
             timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
             filename = self.events_dir.joinpath(f"{timestamp}.json")
 
-            filename.write_text(json.dumps(events, default=str, indent=2))
+            raw_events = [event.raw_data for event in events]
+            filename.write_text(json.dumps(raw_events))
             logger.info(f"Saved {len(events)} events to {filename}")
+
+            # Store events in shared storage for server access
+            event_storage.add_events(events)
 
             self._save_state()
 

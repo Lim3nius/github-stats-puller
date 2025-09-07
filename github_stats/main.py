@@ -13,10 +13,10 @@ def setup_logging():
 
 
 def main_loop():
+    load_dotenv("gh.env")
+
     setup_logging()
     logger.info("Starting GitHub Events polling client")
-
-    load_dotenv("gh.env")
 
     client = GitHubEventsClient()
 
