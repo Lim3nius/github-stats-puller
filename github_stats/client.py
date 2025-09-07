@@ -16,17 +16,17 @@ class GitHubEventsClient:
     def __init__(self, state_file: str | None = None, events_dir: str | None = None):
         self.state_file = Path(state_file or os.getenv("CLIENT_STATE_FILE", "state/client-state.json"))
         self.events_dir = Path(events_dir or os.getenv("EVENTS_DIRECTORY", "downloaded-events"))
-        
+
         # Check if file saving is enabled
         self.save_to_files = os.getenv("SAVE_EVENTS_TO_FILES", "true").lower() == "true"
-        
+
         # Only create events directory if saving is enabled
         if self.save_to_files:
             self.events_dir.mkdir(exist_ok=True)
             logger.debug(f"Event file saving enabled, directory: {self.events_dir}")
         else:
             logger.debug("Event file saving disabled")
-            
+
         self.state_file.parent.mkdir(exist_ok=True)
 
         token = os.getenv("GITHUB_TOKEN")
@@ -39,7 +39,7 @@ class GitHubEventsClient:
         self.state = self._load_state()
 
         logger.debug(
-            f"Initialized PyGitHub client with state file: {state_file}, poll interval: {self.state.poll_interval_sec}s"
+            f"Initialized PyGitHub client with state file: {self.state_file}, poll interval: {self.state.poll_interval_sec}s"
         )
 
     def _load_state(self) -> ClientState:
@@ -57,7 +57,7 @@ class GitHubEventsClient:
         """Save events to JSON file (only if file saving is enabled)"""
         timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
         filename = self.events_dir.joinpath(f"{timestamp}.json")
-        
+
         raw_events = [event.raw_data for event in events]
         filename.write_text(json.dumps(raw_events))
         logger.info(f"Saved {len(events)} events to {filename}")
