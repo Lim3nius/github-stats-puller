@@ -12,11 +12,12 @@ dependencies = [
     "plotly>=5.17.0",
     "loguru>=0.7.0",
     "python-dotenv>=1.1.1",
+    "clickhouse-connect>=0.7.0",
 ]
 
-[project.scripts]
-github-stats = "github_stats.main:main"
-github-api = "github_stats.app:main"
+# [project.scripts]
+# github-stats = "github_stats.main:main"
+# github-api = "github_stats.app:main"
 
-[tool.uv]
-package = true
+# [tool.uv]
+# package = true

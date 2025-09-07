@@ -9,7 +9,7 @@ from github.Event import Event
 import time
 
 from github_stats.models import ClientState
-from github_stats.database import database_service
+from github_stats.stores import get_database_service
 
 
 class GitHubEventsClient:
@@ -109,7 +109,7 @@ class GitHubEventsClient:
             logger.info(f"Saved {len(events)} events to {filename}")
 
             # Store events in database for server access
-            inserted_count = database_service.insert_events(events)
+            inserted_count = get_database_service().insert_events(events)
             logger.debug(f"Inserted {inserted_count} events into database")
 
             self._save_state()

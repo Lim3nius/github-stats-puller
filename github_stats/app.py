@@ -9,6 +9,7 @@ from loguru import logger
 
 from github_stats.client import GitHubEventsClient
 from github_stats.server import app
+from github_stats.stores import ClickHouseConfig, configure_database_service
 
 
 def setup_logging():
@@ -51,6 +52,22 @@ def main():
     """Main entry point that runs both client and server"""
     load_dotenv("gh.env")
     setup_logging()
+
+    # Configure database backend
+    db_backend = os.getenv("DATABASE_BACKEND", "memory").lower()
+    logger.info(f"Configuring database backend: {db_backend}")
+
+    if db_backend == "clickhouse":
+        clickhouse_config: ClickHouseConfig = {
+            "host": os.getenv("CLICKHOUSE_HOST", "localhost"),
+            "port": int(os.getenv("CLICKHOUSE_PORT", "8123")),
+            "username": os.getenv("CLICKHOUSE_USER", "github_app_user"),
+            "password": os.getenv("CLICKHOUSE_PASSWORD", "github_app_pass"),
+            "database": os.getenv("CLICKHOUSE_DATABASE", "github_stats"),
+        }
+        configure_database_service("clickhouse", clickhouse_config)
+    else:
+        configure_database_service("memory")
 
     logger.info("Starting GitHub Events API with polling client")
 
