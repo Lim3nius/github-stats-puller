@@ -108,7 +108,7 @@ class GitHubEventsClient:
 
             # Store events in database for server access
             inserted_count = get_database_service().insert_events(list(event_id_map.values()))
-            logger.debug(f"Inserted {inserted_count} events into database")
+            logger.info(f"Inserted {inserted_count} events into database")
 
             self._save_state()
 
