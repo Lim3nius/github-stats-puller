@@ -6,19 +6,21 @@ A Python service that streams GitHub events and provides REST API metrics with C
 
 - **Real-time GitHub Events Streaming**: Polls GitHub Events API with smart ETag caching and rate limiting
 - **Event Filtering**: Focuses on WatchEvent, PullRequestEvent, and IssuesEvent
-- **REST API Metrics**: Calculate average PR times, event counts by type, and visualizations  
+- **REST API Metrics**: Calculate average PR times and event counts by type
 - **ClickHouse Integration**: High-performance database backend for event storage
 - **Persistent State**: Maintains client state and respects GitHub API rate limits across restarts
 - **Docker Support**: Full containerization with docker-compose orchestration
 
-## Quick Start with Docker Compose
+## Setup
 
-### Prerequisites
+### Using Docker
+
+#### Prerequisites
 
 - Docker and Docker Compose installed
 - Optional: GitHub Personal Access Token for higher rate limits
 
-### Setup
+#### Steps
 
 1. **Clone and setup environment**:
 
@@ -44,42 +46,31 @@ A Python service that streams GitHub events and provides REST API metrics with C
    docker-compose logs github-stats
    ```
 
-### API Endpoints
+### Local script, DB in compose
 
-Once running, the API is available at `http://localhost:8000`:
-
-- **API Documentation**: `GET /docs` - Interactive Swagger/OpenAPI documentation
-- **Health Check**: `GET /health`
-- **Event Metrics**: `GET /metrics/events?offset=60` - Event counts by type for last 60 minutes
-- **PR Metrics**: `GET /metrics/pullrequest/{repo}` - Average time between PRs for repository
-- **Visualization**: `GET /visualization` - Interactive charts and data insights
-
-### Debug Endpoints
-
-- `GET /debug/health` - Database connection status
-- `GET /debug/events` - Total events count 
-- `GET /debug/events/{repo}` - Events count for specific repository
-
-## Local Development
-
-### Prerequisites
+#### Prerequisites
 
 - Python 3.12+
 - [uv](https://docs.astral.sh/uv/) package manager
+- Docker and Docker Compose installed
+- Optional: GitHub Personal Access Token for higher rate limits
 
-### Setup
+#### Steps
 
 1. **Install dependencies**:
+
    ```bash
    uv sync
    ```
 
 2. **Start ClickHouse (optional)**:
+
    ```bash
    docker-compose up clickhouse -d
    ```
 
 3. **Run locally**:
+
    ```bash
    # With in-memory storage
    uv run -m github_stats
@@ -89,22 +80,45 @@ Once running, the API is available at `http://localhost:8000`:
    uv run -m github_stats
    ```
 
+## API
+
+### API Endpoints
+
+Once running, the API is available at `http://localhost:8000`:
+
+- **API Documentation**: `GET /docs` - Interactive Swagger/OpenAPI documentation
+- **Health Check**: `GET /health`
+- **Event Metrics**: `GET /metrics/events?offset=60` - Event counts by type for last 60 minutes
+- **PR Metrics**: `GET /metrics/pullrequest/{repo}` - Average time between PRs for repository
+
+** Full documentation via OpenAPI specs is available on [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Debug Endpoints
+
+I created some events which helped me debug peculiarities and bugs.
+
+- `GET /health` - Database connection status with overview
+- `GET /debug/agg-repo-events/{repository}` - Returns aggregated events count for specified repository
+- `GET /debug/list-repo-events/{repository:path}` - Returns list of known events for given repository
+- `GET /debug/repos-by-event-count` - Returns list of N repositories with most events
+
+
 ## Configuration
 
 ### Environment Variables
 
-| Variable              | Default           | Description                                |
-|-----------------------|-------------------|--------------------------------------------|
-| `GITHUB_READ_TOKEN`   | -                 | GitHub Personal Access Token (recommended) |
-| `SAVE_EVENTS_TO_FILES`| `true`            | Save events to JSON files (`true`/`false`) |
-| `EVENTS_DIRECTORY`    | `downloaded-events` | Directory for JSON event files           |
-| `DATABASE_BACKEND`    | `memory`          | Backend type: `memory` or `clickhouse`     |
-| `CLICKHOUSE_HOST`     | `localhost`       | ClickHouse server host                     |
-| `CLICKHOUSE_PORT`     | `9000`            | ClickHouse native protocol port            |
-| `CLICKHOUSE_USER`     | `github_user`     | ClickHouse username                        |
-| `CLICKHOUSE_PASSWORD` | `github_pass`     | ClickHouse password                        |
-| `CLICKHOUSE_DATABASE` | `github_stats`    | ClickHouse database name                   |
-| `LOG_LEVEL`           | `INFO`            | Logging level                              |
+| Variable               | Default             | Description                                |
+|------------------------|---------------------|--------------------------------------------|
+| `GITHUB_READ_TOKEN`    | -                   | GitHub Personal Access Token (recommended) |
+| `SAVE_EVENTS_TO_FILES` | `true`              | Save events to JSON files (`true`/`false`) |
+| `EVENTS_DIRECTORY`     | `downloaded-events` | Directory for JSON event files             |
+| `DATABASE_BACKEND`     | `memory`            | Backend type: `memory` or `clickhouse`     |
+| `CLICKHOUSE_HOST`      | `localhost`         | ClickHouse server host                     |
+| `CLICKHOUSE_PORT`      | `9000`              | ClickHouse native protocol port            |
+| `CLICKHOUSE_USER`      | `github_user`       | ClickHouse username                        |
+| `CLICKHOUSE_PASSWORD`  | `github_pass`       | ClickHouse password                        |
+| `CLICKHOUSE_DATABASE`  | `github_stats`      | ClickHouse database name                   |
+| `LOG_LEVEL`            | `INFO`              | Logging level                              |
 
 ### Docker Volumes
 
