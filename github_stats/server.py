@@ -1,36 +1,59 @@
 from fastapi import FastAPI, Query, Request
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 from pydantic import BaseModel
-from typing import Dict, TypedDict
+from typing import Dict, TypedDict, List, Callable, Awaitable
 import uvicorn
 import time
 from loguru import logger
 
 from github_stats.stores import get_database_service, DatabaseHealth
 
-app = FastAPI(
-    title="GitHub Events API",
-    description="REST API for GitHub events metrics",
-    version="1.0.0"
-)
+# Type alias for middleware functions
+MiddlewareFunc = Callable[[Request, RequestResponseEndpoint], Awaitable[Response]]
 
 
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    """Log all HTTP requests with timing information"""
-    start_time = time.time()
-    
-    # Process the request
-    response = await call_next(request)
-    
-    # Calculate request duration
-    duration_ms = (time.time() - start_time) * 1000
-    
-    # Log the access information
-    logger.info(
-        f"{request.method} {request.url.path} - {response.status_code} - {duration_ms:.2f}ms"
-    )
-    
-    return response
+def create_access_log_middleware() -> MiddlewareFunc:
+    """Factory function for access log middleware"""
+
+    async def access_log_middleware(request: Request, call_next: RequestResponseEndpoint) -> Response:
+        """Log all HTTP requests with timing information"""
+        start_time = time.time()
+
+        # Process the request
+        response = await call_next(request)
+
+        # Calculate request duration
+        duration_ms = (time.time() - start_time) * 1000
+
+        # Log the access information
+        logger.info(f"{request.method} {request.url.path} - {response.status_code} - {duration_ms:.2f}ms")
+
+        return response
+
+    return access_log_middleware
+
+
+def setup_middlewares(app: FastAPI, middlewares: List[MiddlewareFunc]) -> None:
+    """
+    Setup middlewares in explicit order.
+    Middlewares are executed in reverse order of registration for requests,
+    and in forward order for responses.
+    """
+    for middleware in middlewares:
+        app.middleware("http")(middleware)
+
+
+# Create FastAPI app
+app = FastAPI(title="GitHub Events API", description="REST API for GitHub events metrics", version="1.0.0")
+
+# Define middleware chain explicitly
+middleware_chain: List[MiddlewareFunc] = [
+    create_access_log_middleware(),
+]
+
+# Setup all middlewares
+setup_middlewares(app, middleware_chain)
 
 
 # TypedDict definitions for return values
@@ -82,23 +105,17 @@ async def get_pr_average_time(repository: str) -> PullRequestMetricsResponse:
     db_service = get_database_service()
     avg_time = db_service.calculate_avg_pr_time(repository)
     pr_events = db_service.get_pull_request_events_for_repo(repository)
-    
-    return PullRequestMetricsResponse(
-        repository=repository,
-        average_time_seconds=avg_time,
-        total_pull_requests=len(pr_events)
-    )
+
+    return PullRequestMetricsResponse(repository=repository, average_time_seconds=avg_time, total_pull_requests=len(pr_events))
 
 
 @app.get("/metrics/events", response_model=EventCountResponse)
 async def get_event_counts(offset: int = Query(..., description="Time offset in minutes")) -> EventCountResponse:
     """Get event counts by type for the given time offset"""
     result = get_database_service().get_events_by_type_and_offset(offset)
-    
+
     return EventCountResponse(
-        offset_minutes=result.offset_minutes,
-        event_counts=result.event_counts,
-        total_events=result.total_events
+        offset_minutes=result.offset_minutes, event_counts=result.event_counts, total_events=result.total_events
     )
 
 
@@ -106,15 +123,12 @@ async def get_event_counts(offset: int = Query(..., description="Time offset in 
 async def get_visualization(offset: int = Query(60, description="Time offset in minutes")) -> VisualizationResponse:
     """Bonus endpoint: Return visualization data"""
     result = get_database_service().get_events_by_type_and_offset(offset)
-    
+
     return {
         "chart_type": "bar",
         "title": f"GitHub Events by Type (Last {offset} minutes)",
-        "data": {
-            "labels": list(result.event_counts.keys()),
-            "values": list(result.event_counts.values())
-        },
-        "total_events": result.total_events
+        "data": {"labels": list(result.event_counts.keys()), "values": list(result.event_counts.values())},
+        "total_events": result.total_events,
     }
 
 
