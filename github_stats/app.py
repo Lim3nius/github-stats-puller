@@ -60,9 +60,9 @@ def main():
     if db_backend == "clickhouse":
         clickhouse_config: ClickHouseConfig = {
             "host": os.getenv("CLICKHOUSE_HOST", "localhost"),
-            "port": int(os.getenv("CLICKHOUSE_PORT", "8123")),
-            "username": os.getenv("CLICKHOUSE_USER", "github_app_user"),
-            "password": os.getenv("CLICKHOUSE_PASSWORD", "github_app_pass"),
+            "port": int(os.getenv("CLICKHOUSE_PORT", "9000")),
+            "username": os.getenv("CLICKHOUSE_USER", "github_user"),
+            "password": os.getenv("CLICKHOUSE_PASSWORD", "github_pass"),
             "database": os.getenv("CLICKHOUSE_DATABASE", "github_stats"),
         }
         configure_database_service("clickhouse", clickhouse_config)

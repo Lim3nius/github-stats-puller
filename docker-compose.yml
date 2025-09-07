@@ -33,10 +33,10 @@ services:
       - github_client_state:/app/state
     environment:
       - DATABASE_BACKEND=clickhouse
-      - CLICKHOUSE_HOST=clickhouse.
-      - CLICKHOUSE_PORT=8123
-      - CLICKHOUSE_USER=github_app_user
-      - CLICKHOUSE_PASSWORD=github_app_pass
+      - CLICKHOUSE_HOST=clickhouse
+      - CLICKHOUSE_PORT=9000
+      - CLICKHOUSE_USER=github_user
+      - CLICKHOUSE_PASSWORD=github_pass
       - CLICKHOUSE_DATABASE=github_stats
       - CLIENT_STATE_FILE=/app/state/client-state.json
       - EVENTS_DIR=/app/downloaded-events

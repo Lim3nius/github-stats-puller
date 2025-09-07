@@ -16,22 +16,21 @@ class ClickHouseDatabaseService(DatabaseService):
     def __init__(
         self,
         host: str = "localhost",
-        port: int = 8123,
+        port: int = 9000,
         username: str = "github_app_user",
         password: str = "github_app_pass",
         database: str = "github_stats",
     ):
-        import clickhouse_connect
-        from clickhouse_connect.driver.client import Client
+        from clickhouse_driver import Client
 
         self.filtered_event_types = {"WatchEvent", "PullRequestEvent", "IssuesEvent"}
 
         try:
-            self.client: Client = clickhouse_connect.get_client(
-                host=host, port=port, username=username, password=password, database=database
+            self.client = Client(
+                host=host, port=port, user=username, password=password, database=database
             )
             # Test connection
-            self.client.query("SELECT 1")
+            self.client.execute("SELECT 1")
             logger.info(f"Connected to ClickHouse at {host}:{port}")
         except Exception as e:
             logger.error(f"Failed to connect to ClickHouse: {e}")
@@ -60,26 +59,23 @@ class ClickHouseDatabaseService(DatabaseService):
 
         event_data_list = [self._event_to_data(event) for event in filtered_events]
 
-        # Prepare data for ClickHouse insertion with explicit column order
-        rows: list[Any] = []
+        # Prepare data for ClickHouse insertion using parameter substitution
+        rows: list[dict[str, Any]] = []
         for event_data in event_data_list:
-            rows.append(
-                [
-                    event_data.event_id,
-                    event_data.event_type,
-                    event_data.repo_name,
-                    event_data.repo_id,
-                    event_data.created_at_ts,
-                    event_data.action or "",
-                    event_data.ingested_at,
-                ]
-            )
+            rows.append({
+                "event_id": event_data.event_id,
+                "event_type": event_data.event_type,
+                "repo_name": event_data.repo_name,
+                "repo_id": event_data.repo_id,
+                "created_at_ts": event_data.created_at_ts,
+                "action": event_data.action or "",
+                "ingested_at": event_data.ingested_at,
+            })
 
         try:
-            self.client.insert(
-                table="events",
-                data=rows,
-                column_names=["event_id", "event_type", "repo_name", "repo_id", "created_at_ts", "action", "ingested_at"],
+            self.client.execute(
+                "INSERT INTO events (event_id, event_type, repo_name, repo_id, created_at_ts, action, ingested_at) VALUES",
+                rows,
             )
 
             logger.debug(f"Inserted {len(event_data_list)} events into ClickHouse")
@@ -96,15 +92,15 @@ class ClickHouseDatabaseService(DatabaseService):
             event_type,
             count(*) as count
         FROM events 
-        WHERE created_at_ts >= now() - INTERVAL {offset_minutes:UInt32} MINUTE
+        WHERE created_at_ts >= now() - INTERVAL %(offset_minutes)s MINUTE
         GROUP BY event_type
         """
 
         try:
-            result = self.client.query(query, parameters={"offset_minutes": offset_minutes})
+            result = self.client.execute(query, {"offset_minutes": offset_minutes})
 
             event_counts = {}
-            for row in result.result_rows:
+            for row in result:
                 event_type, count = row
                 event_counts[event_type] = count
 
@@ -123,15 +119,15 @@ class ClickHouseDatabaseService(DatabaseService):
             event_id, event_type, repo_name, repo_id, 
             created_at_ts, action, ingested_at
         FROM events 
-        WHERE event_type = 'PullRequestEvent' AND repo_name = {repo_name:String}
+        WHERE event_type = 'PullRequestEvent' AND repo_name = %(repo_name)s
         ORDER BY created_at_ts
         """
 
         try:
-            result = self.client.query(query, parameters={"repo_name": repo_name})
+            result = self.client.execute(query, {"repo_name": repo_name})
 
             events = []
-            for row in result.result_rows:
+            for row in result:
                 event_id, event_type, repo_name, repo_id, created_at_ts, action, ingested_at = row
                 events.append(
                     EventData(
@@ -170,15 +166,15 @@ class ClickHouseDatabaseService(DatabaseService):
         """Get database connection and health information"""
         try:
             # Test connection
-            self.client.query("SELECT 1")
+            self.client.execute("SELECT 1")
 
             # Get total events
-            total_result = self.client.query("SELECT count(*) FROM events")
-            total_events = total_result.result_rows[0][0] if total_result.result_rows else 0
+            total_result = self.client.execute("SELECT count(*) FROM events")
+            total_events = total_result[0][0] if total_result else 0
 
             # Get latest event timestamp
-            latest_result = self.client.query("SELECT max(created_at_ts) FROM events")
-            last_event_ts = latest_result.result_rows[0][0] if latest_result.result_rows else None
+            latest_result = self.client.execute("SELECT max(created_at_ts) FROM events")
+            last_event_ts = latest_result[0][0] if latest_result else None
 
             return DatabaseHealth(
                 is_connected=True, backend_type="clickhouse", total_events=total_events, last_event_ts=last_event_ts
@@ -191,8 +187,8 @@ class ClickHouseDatabaseService(DatabaseService):
     def get_total_event_count(self) -> int:
         """Get total number of events stored"""
         try:
-            result = self.client.query("SELECT count(*) FROM events")
-            return result.result_rows[0][0] if result.result_rows else 0
+            result = self.client.execute("SELECT count(*) FROM events")
+            return result[0][0] if result else 0
         except Exception as e:
             logger.error(f"Failed to get total event count from ClickHouse: {e}")
             return 0
@@ -200,8 +196,8 @@ class ClickHouseDatabaseService(DatabaseService):
     def get_events_count_by_repo(self, repo_name: str) -> int:
         """Get total event count for a specific repository"""
         try:
-            result = self.client.query("SELECT count(*) FROM events WHERE repo_name = {repo_name:String}", parameters={"repo_name": repo_name})
-            return result.result_rows[0][0] if result.result_rows else 0
+            result = self.client.execute("SELECT count(*) FROM events WHERE repo_name = %(repo_name)s", {"repo_name": repo_name})
+            return result[0][0] if result else 0
         except Exception as e:
             logger.error(f"Failed to get repo event count from ClickHouse: {e}")
             return 0

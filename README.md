@@ -98,9 +98,9 @@ Once running, the API is available at `http://localhost:8000`:
 | `GITHUB_READ_TOKEN`   | -                 | GitHub Personal Access Token (recommended) |
 | `DATABASE_BACKEND`    | `memory`          | Backend type: `memory` or `clickhouse`     |
 | `CLICKHOUSE_HOST`     | `localhost`       | ClickHouse server host                     |
-| `CLICKHOUSE_PORT`     | `8123`            | ClickHouse HTTP port                       |
-| `CLICKHOUSE_USER`     | `github_app_user` | ClickHouse username                        |
-| `CLICKHOUSE_PASSWORD` | `github_app_pass` | ClickHouse password                        |
+| `CLICKHOUSE_PORT`     | `9000`            | ClickHouse native protocol port            |
+| `CLICKHOUSE_USER`     | `github_user`     | ClickHouse username                        |
+| `CLICKHOUSE_PASSWORD` | `github_pass`     | ClickHouse password                        |
 | `CLICKHOUSE_DATABASE` | `github_stats`    | ClickHouse database name                   |
 | `LOG_LEVEL`           | `INFO`            | Logging level                              |
 
