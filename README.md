@@ -96,6 +96,8 @@ Once running, the API is available at `http://localhost:8000`:
 | Variable              | Default           | Description                                |
 |-----------------------|-------------------|--------------------------------------------|
 | `GITHUB_READ_TOKEN`   | -                 | GitHub Personal Access Token (recommended) |
+| `SAVE_EVENTS_TO_FILES`| `true`            | Save events to JSON files (`true`/`false`) |
+| `EVENTS_DIRECTORY`    | `downloaded-events` | Directory for JSON event files           |
 | `DATABASE_BACKEND`    | `memory`          | Backend type: `memory` or `clickhouse`     |
 | `CLICKHOUSE_HOST`     | `localhost`       | ClickHouse server host                     |
 | `CLICKHOUSE_PORT`     | `9000`            | ClickHouse native protocol port            |

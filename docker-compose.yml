@@ -39,7 +39,8 @@ services:
       - CLICKHOUSE_PASSWORD=github_pass
       - CLICKHOUSE_DATABASE=github_stats
       - CLIENT_STATE_FILE=/app/state/client-state.json
-      - EVENTS_DIR=/app/downloaded-events
+      - SAVE_EVENTS_TO_FILES=true
+      - EVENTS_DIRECTORY=/app/downloaded-events
       - GITHUB_TOKEN=${GITHUB_READ_TOKEN}
     depends_on:
       - "clickhouse"

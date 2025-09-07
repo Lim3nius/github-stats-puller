@@ -15,9 +15,18 @@ from github_stats.stores import get_database_service
 class GitHubEventsClient:
     def __init__(self, state_file: str | None = None, events_dir: str | None = None):
         self.state_file = Path(state_file or os.getenv("CLIENT_STATE_FILE", "state/client-state.json"))
-        self.events_dir = Path(events_dir or os.getenv("EVENTS_DIR", "downloaded-events"))
-
-        self.events_dir.mkdir(exist_ok=True)
+        self.events_dir = Path(events_dir or os.getenv("EVENTS_DIRECTORY", "downloaded-events"))
+        
+        # Check if file saving is enabled
+        self.save_to_files = os.getenv("SAVE_EVENTS_TO_FILES", "true").lower() == "true"
+        
+        # Only create events directory if saving is enabled
+        if self.save_to_files:
+            self.events_dir.mkdir(exist_ok=True)
+            logger.debug(f"Event file saving enabled, directory: {self.events_dir}")
+        else:
+            logger.debug("Event file saving disabled")
+            
         self.state_file.parent.mkdir(exist_ok=True)
 
         token = os.getenv("GITHUB_TOKEN")
@@ -43,6 +52,15 @@ class GitHubEventsClient:
     def _save_state(self):
         self.state_file.write_text(self.state.model_dump_json())
         logger.debug(f"State saved to {self.state_file}")
+
+    def _save_events_to_file(self, events: List[Event], poll_ts: datetime):
+        """Save events to JSON file (only if file saving is enabled)"""
+        timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
+        filename = self.events_dir.joinpath(f"{timestamp}.json")
+        
+        raw_events = [event.raw_data for event in events]
+        filename.write_text(json.dumps(raw_events))
+        logger.info(f"Saved {len(events)} events to {filename}")
 
     def _check_rate_limit(self):
         """Check and respect GitHub API rate limits"""
@@ -93,12 +111,11 @@ class GitHubEventsClient:
             self.state.last_poll = poll_ts
             self.state.next_poll_time_ts = poll_ts + timedelta(seconds=self.state.poll_interval_sec)
 
-            timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
-            filename = self.events_dir.joinpath(f"{timestamp}.json")
-
-            raw_events = [event.raw_data for event in events]
-            filename.write_text(json.dumps(raw_events))
-            logger.info(f"Saved {len(events)} events to {filename}")
+            # Save events to files only if enabled
+            if self.save_to_files:
+                self._save_events_to_file(events, poll_ts)
+            else:
+                logger.debug(f"Downloaded {len(events)} events (file saving disabled)")
 
             logger.debug(f"event count before deduplication based on event_id: {len(events)}")
 
