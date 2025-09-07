@@ -73,10 +73,6 @@ class VisualizationResponse(TypedDict):
     total_events: int
 
 
-class TotalEventsResponse(TypedDict):
-    total_events: int
-
-
 class RepoEventsResponse(TypedDict):
     repository: str
     event_count: int
@@ -103,7 +99,7 @@ async def root() -> RootResponse:
 async def get_pr_average_time(repository: str) -> PullRequestMetricsResponse:
     """
     Get average time between pull requests for a repository.
-    
+
     Args:
         repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
     """
@@ -143,17 +139,11 @@ async def get_health() -> DatabaseHealth:
     return get_database_service().get_health_status()
 
 
-@app.get("/debug/total-events")
-async def get_total_events() -> TotalEventsResponse:
-    """Debugging: Get total event count"""
-    return {"total_events": get_database_service().get_total_event_count()}
-
-
 @app.get("/debug/repo-events/{repository:path}")
 async def get_repo_events(repository: str) -> RepoEventsResponse:
     """
     Debugging: Get event count for a specific repository.
-    
+
     Args:
         repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
     """

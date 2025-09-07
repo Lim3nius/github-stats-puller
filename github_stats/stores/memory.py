@@ -92,11 +92,6 @@ class InMemoryDatabaseService(DatabaseService):
                 is_connected=True, backend_type="in-memory", total_events=len(self.events), last_event_ts=last_event_ts
             )
 
-    def get_total_event_count(self) -> int:
-        """Get total number of events stored"""
-        with self._lock:
-            return len(self.events)
-
     def get_events_count_by_repo(self, repo_name: str) -> int:
         """Get total event count for a specific repository"""
         with self._lock:
