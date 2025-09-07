@@ -7,7 +7,7 @@ from typing import List
 from github.Event import Event
 from loguru import logger
 
-from .base import DatabaseService, EventData, EventCountsByType, DatabaseHealth
+from .base import DatabaseService, EventData, EventCountsByType, DatabaseHealth, EventInfo
 
 
 class InMemoryDatabaseService(DatabaseService):
@@ -96,3 +96,7 @@ class InMemoryDatabaseService(DatabaseService):
         """Get total event count for a specific repository"""
         with self._lock:
             return len([event for event in self.events if event.repo_name == repo_name])
+
+    def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
+        """Get all events for a repository - not implemented for in-memory backend"""
+        raise NotImplementedError("get_events_for_repo not implemented for in-memory backend")

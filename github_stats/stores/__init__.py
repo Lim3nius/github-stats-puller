@@ -6,6 +6,7 @@ Database stores package - clean re-exports and global instance management.
 from .base import (
     EventData,
     EventCountsByType,
+    EventInfo,
     PullRequestMetrics,
     DatabaseHealth,
     DatabaseService,

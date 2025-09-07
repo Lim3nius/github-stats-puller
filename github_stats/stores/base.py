@@ -51,6 +51,14 @@ class DatabaseHealth(BaseModel):
     last_event_ts: Optional[datetime] = None
 
 
+class EventInfo(TypedDict):
+    """Event information for repository events listing"""
+    
+    event_id: str
+    action: str
+    event_type: str
+
+
 # Configuration types
 
 
@@ -98,4 +106,9 @@ class DatabaseService(ABC):
     @abstractmethod
     def get_events_count_by_repo(self, repo_name: str) -> int:
         """Get total event count for a specific repository"""
+        pass
+
+    @abstractmethod
+    def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
+        """Get all events for a repository with event_id, action, event_type"""
         pass

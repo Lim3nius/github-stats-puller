@@ -7,7 +7,7 @@ import uvicorn
 import time
 from loguru import logger
 
-from github_stats.stores import get_database_service, DatabaseHealth
+from github_stats.stores import get_database_service, DatabaseHealth, EventInfo
 
 # Type alias for middleware functions
 MiddlewareFunc = Callable[[Request, RequestResponseEndpoint], Awaitable[Response]]
@@ -139,7 +139,7 @@ async def get_health() -> DatabaseHealth:
     return get_database_service().get_health_status()
 
 
-@app.get("/debug/repo-events/{repository:path}")
+@app.get("/debug/agg-repo-events/{repository:path}")
 async def get_repo_events(repository: str) -> RepoEventsResponse:
     """
     Debugging: Get event count for a specific repository.
@@ -149,6 +149,17 @@ async def get_repo_events(repository: str) -> RepoEventsResponse:
     """
     count = get_database_service().get_events_count_by_repo(repository)
     return {"repository": repository, "event_count": count}
+
+
+@app.get("/debug/list-repo-events/{repository:path}")
+async def get_repo_events_list(repository: str) -> List[EventInfo]:
+    """
+    Get all events for a repository with event_id, action, event_type.
+
+    Args:
+        repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
+    """
+    return get_database_service().get_events_for_repo(repository)
 
 
 if __name__ == "__main__":
