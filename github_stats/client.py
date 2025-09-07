@@ -1,7 +1,7 @@
 import json
 import os
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, List
 from loguru import logger
 from github import Github
@@ -82,7 +82,9 @@ class GitHubEventsClient:
 
             if not events:
                 logger.debug("No events available")
-                self.state.last_poll = datetime.now(timezone.utc)
+                poll_ts = datetime.now(timezone.utc)
+                self.state.last_poll = poll_ts
+                self.state.next_poll_time_ts = poll_ts + timedelta(seconds=self.state.poll_interval_sec)
                 self._save_state()
                 return []
 
@@ -97,6 +99,7 @@ class GitHubEventsClient:
 
             poll_ts = datetime.now(timezone.utc)
             self.state.last_poll = poll_ts
+            self.state.next_poll_time_ts = poll_ts + timedelta(seconds=self.state.poll_interval_sec)
 
             timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
             filename = self.events_dir.joinpath(f"{timestamp}.json")

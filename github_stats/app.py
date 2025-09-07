@@ -1,6 +1,7 @@
 import threading
 import time
 import uvicorn
+from datetime import datetime, timezone
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -13,6 +14,14 @@ def run_client_polling():
     """Run the GitHub events client polling in a separate thread"""
     logger.info("Starting GitHub events polling client thread")
     client = GitHubEventsClient()
+    
+    # Check if we need to wait before first poll
+    if client.state.next_poll_time_ts:
+        now = datetime.now(timezone.utc)
+        if client.state.next_poll_time_ts > now:
+            wait_time_sec = (client.state.next_poll_time_ts - now).total_seconds()
+            logger.info(f"Waiting {wait_time_sec:.1f} seconds until next poll time")
+            time.sleep(wait_time_sec)
     
     while True:
         try:
