@@ -129,6 +129,57 @@ Main architecture overview is in [ACHITECTURE.md](/ARCHITECTURE.md)
 - **Client State**: ETag, poll intervals, and next poll time persisted across restarts
 - **Rate Limiting**: Respects GitHub API X-Poll-Interval headers
 
+## Backfill Tool
+
+The project includes a backfill tool to populate the ClickHouse database from existing JSON event files:
+
+### Prerequisites
+
+The backfill tool requires ClickHouse database backend:
+
+```bash
+# Ensure ClickHouse is running
+docker-compose up clickhouse -d
+
+# Set ClickHouse backend
+export DATABASE_BACKEND=clickhouse
+```
+
+### Usage
+
+```bash
+# Dry run to see what would be processed
+uv run backfill_events.py --dry-run
+
+# Process and insert events into ClickHouse database
+uv run backfill_events.py
+
+# Specify custom events directory
+uv run backfill_events.py --events-dir /path/to/events
+
+# Use custom .env file (defaults to gh.env)
+uv run backfill_events.py --dotenv .env.production
+```
+
+### Features
+
+- **ClickHouse Integration**: Designed specifically for ClickHouse database backend
+- **Environment Configuration**: Loads settings from `gh.env` file by default
+- **Batch Processing**: Processes all JSON files in the events directory
+- **Event Filtering**: Only processes WatchEvent, PullRequestEvent, and IssuesEvent
+- **Deduplication**: Automatically skips duplicate events (keeps oldest version)
+- **Progress Tracking**: Shows detailed processing statistics
+- **Error Resilience**: Individual file failures don't stop the entire process
+
+### Use Cases
+
+- **Initial Database Population**: Load historical events from saved JSON files into ClickHouse
+- **Data Recovery**: Restore events after ClickHouse database issues
+- **Development/Testing**: Populate ClickHouse test databases with real event data
+- **Historical Data Import**: Bulk import large amounts of historical GitHub event data
+
+**Note**: The backfill tool only works with ClickHouse backend and will exit with an error if run with in-memory storage.
+
 ## Stopping Services
 
 ```bash

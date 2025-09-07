@@ -86,8 +86,15 @@ class ClickHouseDatabaseService(DatabaseService):
         if not filtered_events:
             return 0
 
-        # Remove duplicates (keep oldest)
-        new_events = self._filter_duplicate_events(filtered_events)
+        # First, deduplicate within the current batch (keep oldest by ID)
+        logger.debug(f"Event count before batch deduplication: {len(filtered_events)}")
+        event_id_map: dict[str, Event] = {event.id: event for event in filtered_events}
+        logger.debug(f"Unique event IDs in batch: {len(event_id_map)}")
+        
+        batch_deduplicated_events = list(event_id_map.values())
+
+        # Then, remove duplicates against database (keep oldest)
+        new_events = self._filter_duplicate_events(batch_deduplicated_events)
 
         if not new_events:
             logger.debug("All events already exist, skipping duplicates")
@@ -118,6 +125,75 @@ class ClickHouseDatabaseService(DatabaseService):
 
             logger.debug(f"Inserted {len(event_data_list)} events into ClickHouse")
             return len(event_data_list)
+
+        except Exception as e:
+            logger.error(f"Failed to insert events into ClickHouse: {e}")
+            raise
+
+    def insert_event_data(self, event_data_list: List[EventData]) -> int:
+        """Insert EventData objects directly and return count of inserted records"""
+        if not event_data_list:
+            return 0
+
+        # First, deduplicate within the current batch (keep oldest by ID) 
+        logger.debug(f"Event data count before batch deduplication: {len(event_data_list)}")
+        event_id_map: dict[str, EventData] = {event_data.event_id: event_data for event_data in event_data_list}
+        logger.debug(f"Unique event data IDs in batch: {len(event_id_map)}")
+        
+        batch_deduplicated_events = list(event_id_map.values())
+
+        # Then filter for duplicate EventData based on event_id against database
+        event_ids = [event_data.event_id for event_data in batch_deduplicated_events]
+        existing_query = """
+        SELECT DISTINCT event_id 
+        FROM events 
+        WHERE event_id IN %(event_ids)s
+        """
+
+        try:
+            existing_result = self.client.execute(existing_query, {"event_ids": event_ids})
+            existing_event_ids = {row[0] for row in existing_result}
+
+            logger.debug(f"Found {len(existing_result)} existing events in database")
+
+            # Filter out events that already exist (keep oldest = skip duplicates)
+            new_event_data = [event_data for event_data in batch_deduplicated_events if event_data.event_id not in existing_event_ids]
+
+            if len(new_event_data) < len(batch_deduplicated_events):
+                logger.debug(f"Filtered out {len(batch_deduplicated_events) - len(new_event_data)} duplicate events from database")
+
+        except Exception as e:
+            logger.warning(f"Failed to check for duplicate events: {e}")
+            # Fallback to using all events if deduplication check fails
+            new_event_data = batch_deduplicated_events
+
+        if not new_event_data:
+            logger.debug("All events already exist, skipping duplicates")
+            return 0
+
+        # Prepare data for ClickHouse insertion
+        rows: list[dict[str, Any]] = []
+        for event_data in new_event_data:
+            rows.append(
+                {
+                    "event_id": event_data.event_id,
+                    "event_type": event_data.event_type,
+                    "repo_name": event_data.repo_name,
+                    "repo_id": event_data.repo_id,
+                    "created_at_ts": event_data.created_at_ts,
+                    "action": event_data.action or "",
+                    "ingested_at": event_data.ingested_at,
+                }
+            )
+
+        try:
+            self.client.execute(
+                "INSERT INTO events (event_id, event_type, repo_name, repo_id, created_at_ts, action, ingested_at) VALUES",
+                rows,
+            )
+
+            logger.debug(f"Inserted {len(new_event_data)} events into ClickHouse")
+            return len(new_event_data)
 
         except Exception as e:
             logger.error(f"Failed to insert events into ClickHouse: {e}")

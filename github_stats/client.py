@@ -117,14 +117,8 @@ class GitHubEventsClient:
             else:
                 logger.debug(f"Downloaded {len(events)} events (file saving disabled)")
 
-            logger.debug(f"event count before deduplication based on event_id: {len(events)}")
-
-            event_id_map: dict[str, Event] = {event.id: event for event in events}
-
-            logger.debug(f"unique event ids: {len(event_id_map.keys())}")
-
-            # Store events in database for server access
-            inserted_count = get_database_service().insert_events(list(event_id_map.values()))
+            # Store events in database for server access (deduplication handled by database service)
+            inserted_count = get_database_service().insert_events(events)
             logger.info(f"Inserted {inserted_count} events into database")
 
             self._save_state()
