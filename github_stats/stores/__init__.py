@@ -7,6 +7,7 @@ from .base import (
     EventData,
     EventCountsByType,
     EventInfo,
+    RepoEventCount,
     PullRequestMetrics,
     DatabaseHealth,
     DatabaseService,
@@ -50,6 +51,8 @@ __all__ = [
     # Base classes and models
     "EventData",
     "EventCountsByType",
+    "EventInfo",
+    "RepoEventCount",
     "PullRequestMetrics",
     "DatabaseHealth",
     "DatabaseService",

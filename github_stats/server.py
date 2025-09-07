@@ -7,7 +7,7 @@ import uvicorn
 import time
 from loguru import logger
 
-from github_stats.stores import get_database_service, DatabaseHealth, EventInfo
+from github_stats.stores import get_database_service, DatabaseHealth, EventInfo, RepoEventCount
 
 # Type alias for middleware functions
 MiddlewareFunc = Callable[[Request, RequestResponseEndpoint], Awaitable[Response]]
@@ -135,6 +135,17 @@ async def get_repo_events_list(repository: str) -> List[EventInfo]:
         repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
     """
     return get_database_service().get_events_for_repo(repository)
+
+
+@app.get("/debug/repos-by-event-count")
+async def get_repos_by_event_count(limit: int = Query(10, description="Maximum number of repositories to return")) -> List[RepoEventCount]:
+    """
+    Debug: Get repositories sorted by event count (descending).
+
+    Args:
+        limit: Maximum number of repositories to return (default: 10)
+    """
+    return get_database_service().get_repos_by_event_count(limit)
 
 
 if __name__ == "__main__":

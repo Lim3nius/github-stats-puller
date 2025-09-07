@@ -7,7 +7,7 @@ from typing import List, Any
 from github.Event import Event
 from loguru import logger
 
-from .base import DatabaseService, EventData, EventCountsByType, DatabaseHealth, EventInfo
+from .base import DatabaseService, EventData, EventCountsByType, DatabaseHealth, EventInfo, RepoEventCount
 
 from clickhouse_driver import Client
 
@@ -373,4 +373,33 @@ class ClickHouseDatabaseService(DatabaseService):
             
         except Exception as e:
             logger.error(f"Failed to get events for repo from ClickHouse: {e}")
+            return []
+
+    def get_repos_by_event_count(self, limit: int = 10) -> List[RepoEventCount]:
+        """Get repositories sorted by event count (descending) with optional limit"""
+        query = """
+        SELECT 
+            repo_name,
+            count(*) as event_count
+        FROM events 
+        GROUP BY repo_name
+        ORDER BY event_count DESC
+        LIMIT %(limit)s
+        """
+        
+        try:
+            result = self.client.execute(query, {"limit": limit})
+            
+            repos: List[RepoEventCount] = []
+            for row in result:
+                repo_name, event_count = row
+                repos.append(RepoEventCount(
+                    repo_name=repo_name,
+                    event_count=event_count
+                ))
+            
+            return repos
+            
+        except Exception as e:
+            logger.error(f"Failed to get repos by event count from ClickHouse: {e}")
             return []

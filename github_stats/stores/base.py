@@ -59,6 +59,13 @@ class EventInfo(TypedDict):
     event_type: str
 
 
+class RepoEventCount(TypedDict):
+    """Repository event count information"""
+    
+    repo_name: str
+    event_count: int
+
+
 # Configuration types
 
 
@@ -111,4 +118,9 @@ class DatabaseService(ABC):
     @abstractmethod
     def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
         """Get all events for a repository with event_id, action, event_type"""
+        pass
+
+    @abstractmethod
+    def get_repos_by_event_count(self, limit: int = 10) -> List[RepoEventCount]:
+        """Get repositories sorted by event count (descending) with optional limit"""
         pass
