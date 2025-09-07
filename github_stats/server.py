@@ -99,9 +99,14 @@ async def root() -> RootResponse:
     return {"message": "GitHub Events API"}
 
 
-@app.get("/metrics/pr-average/{repository}", response_model=PullRequestMetricsResponse)
+@app.get("/metrics/pr-average/{repository:path}", response_model=PullRequestMetricsResponse)
 async def get_pr_average_time(repository: str) -> PullRequestMetricsResponse:
-    """Get average time between pull requests for a repository"""
+    """
+    Get average time between pull requests for a repository.
+    
+    Args:
+        repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
+    """
     db_service = get_database_service()
     avg_time = db_service.calculate_avg_pr_time(repository)
     pr_events = db_service.get_pull_request_events_for_repo(repository)
@@ -144,9 +149,14 @@ async def get_total_events() -> TotalEventsResponse:
     return {"total_events": get_database_service().get_total_event_count()}
 
 
-@app.get("/debug/repo-events/{repository}")
+@app.get("/debug/repo-events/{repository:path}")
 async def get_repo_events(repository: str) -> RepoEventsResponse:
-    """Debugging: Get event count for a specific repository"""
+    """
+    Debugging: Get event count for a specific repository.
+    
+    Args:
+        repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
+    """
     count = get_database_service().get_events_count_by_repo(repository)
     return {"repository": repository, "event_count": count}
 
