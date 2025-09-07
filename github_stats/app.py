@@ -44,8 +44,8 @@ def run_client_polling():
 
 def run_server():
     """Run the FastAPI server"""
-    logger.info("Starting FastAPI server")
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None)
+    logger.info("Starting FastAPI server on http://0.0.0.0:8000")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=None, access_log=False)
 
 
 def main():

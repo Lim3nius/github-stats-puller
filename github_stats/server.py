@@ -1,7 +1,9 @@
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from pydantic import BaseModel
 from typing import Dict, TypedDict
 import uvicorn
+import time
+from loguru import logger
 
 from github_stats.stores import get_database_service, DatabaseHealth
 
@@ -10,6 +12,25 @@ app = FastAPI(
     description="REST API for GitHub events metrics",
     version="1.0.0"
 )
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log all HTTP requests with timing information"""
+    start_time = time.time()
+    
+    # Process the request
+    response = await call_next(request)
+    
+    # Calculate request duration
+    duration_ms = (time.time() - start_time) * 1000
+    
+    # Log the access information
+    logger.info(
+        f"{request.method} {request.url.path} - {response.status_code} - {duration_ms:.2f}ms"
+    )
+    
+    return response
 
 
 # TypedDict definitions for return values
