@@ -1,15 +1,15 @@
 import json
 import os
 from pathlib import Path
-from datetime import datetime, timezone, tzinfo
+from datetime import datetime, timezone
 from typing import Any, List
 from loguru import logger
 from github import Github
 from github.Event import Event
 import time
 
-from .models import ClientState
-from .storage import event_storage
+from github_stats.models import ClientState
+from github_stats.storage import event_storage
 
 
 class GitHubEventsClient:

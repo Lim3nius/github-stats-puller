@@ -2,7 +2,7 @@ import os
 import sys
 import time
 from loguru import logger
-from .client import GitHubEventsClient
+from github_stats.client import GitHubEventsClient
 from dotenv import load_dotenv
 
 

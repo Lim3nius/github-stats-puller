@@ -1,9 +1,9 @@
 from fastapi import FastAPI, Query
 from pydantic import BaseModel
-from typing import Dict, Any
+from typing import Dict
 import uvicorn
 
-from .storage import event_storage
+from github_stats.storage import event_storage
 
 app = FastAPI(
     title="GitHub Events API",

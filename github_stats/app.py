@@ -4,9 +4,9 @@ import uvicorn
 from dotenv import load_dotenv
 from loguru import logger
 
-from .client import GitHubEventsClient
-from .server import app
-from .main import setup_logging
+from github_stats.client import GitHubEventsClient
+from github_stats.server import app
+from github_stats.main import setup_logging
 
 
 def run_client_polling():
