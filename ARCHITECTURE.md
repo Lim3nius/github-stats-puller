@@ -69,7 +69,7 @@ The GitHub Events Statistics Puller is a Python application that monitors GitHub
 - Time-based polling with intelligent scheduling
 - Event polling with configurable intervals
 - Raw event persistence to JSON files
-- Filtered event forwarding to DatabaseService
+- Event forwarding to DatabaseService (deduplication handled by database layer)
 
 **Key Features:**
 
@@ -105,7 +105,9 @@ The GitHub Events Statistics Puller is a Python application that monitors GitHub
 - **ClickHouseDatabaseService**: Production backend using ClickHouse
   - Uses pre-aggregated `pr_metrics_agg` table for PR calculations
   - Fetches only required fields (e.g., timestamps) to minimize data transfer
-  - **Deduplication**: Checks existing event_ids before insert to keep oldest version
+  - **Two-Level Deduplication**: 
+    1. Batch-level: Removes duplicates within incoming event batches
+    2. Database-level: Checks existing event_ids before insert to keep oldest version
   - **Performance**: ~1-3% overhead per batch, ~1-5ms duplicate lookups
   - Fallback to raw events table if aggregated data unavailable
 - **InMemoryDatabaseService**: Development/testing backend with thread-safe operations
@@ -141,6 +143,37 @@ The GitHub Events Statistics Puller is a Python application that monitors GitHub
 - `GET /health` - Database health and connection status
 - `GET /debug/total-events` - Total event count
 - `GET /debug/repo-events/{repository:path}` - Repository event count
+
+### Backfill Tool (github_stats/backfill.py)
+
+**Responsibilities:**
+
+- Historical data migration from JSON files to ClickHouse database
+- Batch processing of saved event files with progress tracking
+- Environment configuration via dotenv support (defaults to `gh.env`)
+- ClickHouse-specific data population and validation
+
+**Key Features:**
+
+- **ClickHouse-Only Operation**: Validates database backend and rejects in-memory storage
+- **Batch Processing**: Processes all JSON files in chronological order
+- **Two-Level Deduplication**: Same strategy as real-time processing
+- **Environment Integration**: Loads ClickHouse credentials from `.env` files
+- **Progress Tracking**: Detailed logging and statistics reporting
+- **Error Resilience**: Individual file failures don't stop the entire process
+
+**Usage Scenarios:**
+
+- Initial database population from historical JSON files
+- Data recovery after database issues or corruption
+- Development environment setup with realistic test data
+- Historical data import for analytics and reporting
+
+**Command Interface:**
+
+- `uv run backfill_events.py` - Process all JSON files
+- `uv run backfill_events.py --dry-run` - Preview processing without insertion
+- `uv run backfill_events.py --dotenv custom.env` - Use custom environment file
 
 ### Application Orchestration (github_stats/app.py)
 
@@ -244,23 +277,33 @@ Automatically populates `pr_metrics_agg` from new events:
 
 **Problem**: GitHub API may return duplicate events in overlapping polls, leading to inflated metrics.
 
-**Solution**: Two-layer deduplication approach:
+**Solution**: Centralized two-layer deduplication in ClickHouse database service:
 
-1. **Schema Optimization**:
-   - Primary key: `ORDER BY (event_id, repo_name, event_type, created_at_ts)`
+1. **Batch-Level Deduplication**:
+   - Removes duplicates within each incoming event batch using `event_id_map`
+   - Keeps oldest event when multiple events share the same ID
+   - Reduces database queries by eliminating obvious duplicates first
+
+2. **Database-Level Deduplication**:
+   - Schema optimization: `ORDER BY (event_id, repo_name, event_type, created_at_ts)`
    - Places `event_id` first for optimal duplicate lookup performance (~1-5ms)
-
-2. **Application Logic**:
-   - Before each insert batch: `SELECT DISTINCT event_id FROM events WHERE event_id IN (...)`
+   - Before each insert: `SELECT DISTINCT event_id FROM events WHERE event_id IN (...)`
    - Filters out existing events to keep oldest version only
    - ~1-3% performance overhead per 300-event batch
    - Graceful fallback if duplicate check fails
+
+**Architecture Benefits**:
+- **Centralized Logic**: All deduplication handled in ClickHouse service layer
+- **Consistent Strategy**: Same approach for real-time polling and historical backfill
+- **Performance Optimized**: Batch-level deduplication reduces database load
+- **Maintainable**: Single location for deduplication logic and policies
 
 **Benefits**:
 - Guaranteed data accuracy for metrics calculations
 - Predictable "oldest wins" deduplication policy  
 - Fast duplicate detection using primary key optimization
 - Minimal performance impact on polling cycle
+- Consistent behavior across all data ingestion paths
 
 ## Configuration
 
@@ -275,9 +318,18 @@ Automatically populates `pr_metrics_agg` from new events:
 ### Application Entry Points
 
 - `uv run python -m github_stats` - Full application (client + server) - **PRIMARY METHOD**
+- `uv run backfill_events.py` - Historical data backfill tool - **ClickHouse ONLY**
 - Module-based execution following Python best practices
 - Absolute imports throughout codebase
 - Legacy entry points removed in favor of module execution
+
+### Backfill Tool Configuration
+
+- `--dotenv PATH` - Environment file path (default: `gh.env`)
+- `--events-dir PATH` - JSON files directory (default: `downloaded-events`)  
+- `--dry-run` - Preview processing without database changes
+- Requires `DATABASE_BACKEND=clickhouse` environment variable
+- Uses same ClickHouse configuration as main application
 
 ## Monitoring and Debugging
 
