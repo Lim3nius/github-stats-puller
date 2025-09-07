@@ -1,0 +1,23 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:25.8
+    container_name: github-stats-clickhouse
+    ports:
+      - "8123:8123" # HTTP interface for queries and admin
+      - "9000:9000" # Native TCP interface for clients
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./clickhouse/init:/docker-entrypoint-initdb.d
+    environment:
+      CLICKHOUSE_DB: github_stats
+      CLICKHOUSE_USER: github_user
+      CLICKHOUSE_PASSWORD: github_pass
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+volumes:
+  clickhouse_data:
+    driver: local
