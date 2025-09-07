@@ -47,10 +47,6 @@ class GitHubEventsClient:
         try:
             rate_limit = self.github.get_rate_limit()
             logger.info(rate_limit)
-            print(rate_limit)
-            # remaining = rate_limit.core.remaining
-            # reset_time = rate_limit.core.reset.timestamp()
-            # logger.debug(f"Rate limit: {remaining} requests remaining, resets at {reset_time}")
 
             if rate_limit.rate.remaining < 10:  # Conservative threshold
                 sleep_time = (rate_limit.rate.reset - datetime.now(timezone.utc)).total_seconds()
@@ -91,32 +87,31 @@ class GitHubEventsClient:
 
             # Filter new events based on last poll time if available
             if self.state.last_poll:
-                new_events = []
+                new_events: list[Event] = []
                 for event in events:
-                    if event.get("created_at"):
-                        event_time = datetime.fromisoformat(event["created_at"].replace("Z", "+00:00"))
-                        if event_time > self.state.last_poll:
-                            new_events.append(event)
+                    event_time = event.created_at
+                    if event_time > self.state.last_poll:
+                        new_events.append(event)
                 events = new_events
 
-            if events:
-                poll_ts = datetime.now(timezone.utc)
-                self.state.last_poll = poll_ts
-
-                timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
-                filename = self.events_dir.joinpath(f"{timestamp}.json")
-
-                filename.write_text(json.dumps(events, default=str, indent=2))
-                logger.info(f"Saved {len(events)} events to {filename}")
-
-                self._save_state()
-
-                return events
-            else:
+            if not events:
                 logger.debug("No new events since last poll")
                 self.state.last_poll = datetime.now(timezone.utc)
                 self._save_state()
                 return []
+
+            poll_ts = datetime.now(timezone.utc)
+            self.state.last_poll = poll_ts
+
+            timestamp = poll_ts.strftime("%Y-%m-%dT%H-%M-%S")
+            filename = self.events_dir.joinpath(f"{timestamp}.json")
+
+            filename.write_text(json.dumps(events, default=str, indent=2))
+            logger.info(f"Saved {len(events)} events to {filename}")
+
+            self._save_state()
+
+            return events
 
         except Exception as e:
             logger.error(f"Error polling events: {e}")
