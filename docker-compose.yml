@@ -17,7 +17,39 @@ services:
       nofile:
         soft: 262144
         hard: 262144
+    # healthcheck:
+    #   test: ["CMD", "curl", "-f", "http://localhost:8123/ping"]
+    #   interval: 10s
+    #   timeout: 5s
+    #   retries: 5
+
+  github-stats:
+    build: .
+    container_name: github-stats-app
+    ports:
+      - "8000:8000"
+    volumes:
+      - github_events_data:/app/downloaded-events
+      - github_client_state:/app/state
+    environment:
+      - DATABASE_BACKEND=clickhouse
+      - CLICKHOUSE_HOST=clickhouse.
+      - CLICKHOUSE_PORT=8123
+      - CLICKHOUSE_USER=github_app_user
+      - CLICKHOUSE_PASSWORD=github_app_pass
+      - CLICKHOUSE_DATABASE=github_stats
+      - CLIENT_STATE_FILE=/app/state/client-state.json
+      - EVENTS_DIR=/app/downloaded-events
+      - GITHUB_TOKEN=${GITHUB_READ_TOKEN}
+    depends_on:
+      - "clickhouse"
+        # condition: service_healthy
+    restart: unless-stopped
 
 volumes:
   clickhouse_data:
+    driver: local
+  github_events_data:
+    driver: local
+  github_client_state:
     driver: local

@@ -13,11 +13,12 @@ from github_stats.stores import get_database_service
 
 
 class GitHubEventsClient:
-    def __init__(self, state_file: str = "client-state.json"):
-        self.state_file = Path(state_file)
-        self.events_dir = Path("downloaded-events")
+    def __init__(self, state_file: str | None = None, events_dir: str | None = None):
+        self.state_file = Path(state_file or os.getenv("CLIENT_STATE_FILE", "state/client-state.json"))
+        self.events_dir = Path(events_dir or os.getenv("EVENTS_DIR", "downloaded-events"))
 
         self.events_dir.mkdir(exist_ok=True)
+        self.state_file.parent.mkdir(exist_ok=True)
 
         token = os.getenv("GITHUB_TOKEN")
         if not token:
