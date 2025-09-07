@@ -96,12 +96,12 @@ class ClickHouseDatabaseService(DatabaseService):
             event_type,
             count(*) as count
         FROM events 
-        WHERE created_at_ts >= now() - INTERVAL ? MINUTE
+        WHERE created_at_ts >= now() - INTERVAL {offset_minutes:UInt32} MINUTE
         GROUP BY event_type
         """
 
         try:
-            result: dict[str, Any] = self.client.query(query, parameters=[offset_minutes])
+            result = self.client.query(query, parameters={"offset_minutes": offset_minutes})
 
             event_counts = {}
             for row in result.result_rows:
@@ -123,12 +123,12 @@ class ClickHouseDatabaseService(DatabaseService):
             event_id, event_type, repo_name, repo_id, 
             created_at_ts, action, ingested_at
         FROM events 
-        WHERE event_type = 'PullRequestEvent' AND repo_name = ?
+        WHERE event_type = 'PullRequestEvent' AND repo_name = {repo_name:String}
         ORDER BY created_at_ts
         """
 
         try:
-            result = self.client.query(query, parameters=[repo_name])
+            result = self.client.query(query, parameters={"repo_name": repo_name})
 
             events = []
             for row in result.result_rows:
@@ -200,7 +200,7 @@ class ClickHouseDatabaseService(DatabaseService):
     def get_events_count_by_repo(self, repo_name: str) -> int:
         """Get total event count for a specific repository"""
         try:
-            result = self.client.query("SELECT count(*) FROM events WHERE repo_name = ?", parameters=[repo_name])
+            result = self.client.query("SELECT count(*) FROM events WHERE repo_name = {repo_name:String}", parameters={"repo_name": repo_name})
             return result.result_rows[0][0] if result.result_rows else 0
         except Exception as e:
             logger.error(f"Failed to get repo event count from ClickHouse: {e}")
