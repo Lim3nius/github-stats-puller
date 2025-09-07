@@ -21,6 +21,7 @@ A Python service that streams GitHub events and provides REST API metrics with C
 ### Setup
 
 1. **Clone and setup environment**:
+
    ```bash
    git clone <repository-url>
    cd github-api-stats-puller
@@ -30,12 +31,14 @@ A Python service that streams GitHub events and provides REST API metrics with C
    ```
 
 2. **Build and run services**:
+
    ```bash
    docker-compose build
    docker-compose up -d
    ```
 
 3. **Verify services are running**:
+
    ```bash
    docker-compose ps
    docker-compose logs github-stats
@@ -139,3 +142,9 @@ docker-compose down -v
 - **Database connection issues**: Check ClickHouse logs with `docker-compose logs clickhouse`
 - **API rate limits**: Add `GITHUB_READ_TOKEN` environment variable
 - **Service health**: Visit `http://localhost:8000/health` for status
+
+
+## Github API links
+
+- [Events REST API](https://docs.github.com/en/rest/activity/events?apiVersion=2022-11-28)
+- [Event Types](https://docs.github.com/en/rest/using-the-rest-api/github-event-types?apiVersion=2022-11-28)
