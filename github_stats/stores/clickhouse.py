@@ -9,8 +9,10 @@ from loguru import logger
 
 from .base import DatabaseService, EventData, EventCountsByType, DatabaseHealth, EventInfo, RepoEventCount
 
-from asynch import Connection
+from asynch import Pool
 from contextlib import asynccontextmanager
+import asyncio
+import threading
 
 
 class ClickHouseDatabaseService(DatabaseService):
@@ -30,24 +32,38 @@ class ClickHouseDatabaseService(DatabaseService):
         self.username = username
         self.password = password
         self.database = database
+        # Store pools per thread/event loop to avoid cross-loop issues
+        self._pools = {}
+        self._lock = threading.Lock()
+
+    async def _ensure_pool(self):
+        """Create connection pool per event loop to avoid cross-loop issues"""
+        loop = asyncio.get_event_loop()
+        loop_id = id(loop)
+
+        # Check if we already have a pool for this event loop
+        with self._lock:
+            if loop_id not in self._pools:
+                self._pools[loop_id] = Pool(
+                    host=self.host,
+                    port=self.port,
+                    user=self.username,
+                    password=self.password,
+                    database=self.database,
+                    minsize=2,  # Minimum connections in pool
+                    maxsize=10,  # Maximum connections in pool
+                )
+                logger.info(f"Created connection pool for event loop {loop_id} to ClickHouse at {self.host}:{self.port}")
+            return self._pools[loop_id]
 
     @asynccontextmanager
     async def _get_connection(self):
-        """Create a new async ClickHouse connection with context manager"""
-        connection = None
-        try:
-            connection = Connection(
-                host=self.host,
-                port=self.port,
-                user=self.username,
-                password=self.password,
-                database=self.database
-            )
-            await connection.connect()
-            yield connection
-        finally:
-            if connection:
-                await connection.close()
+        """Get a connection from the pool with context manager"""
+        pool = await self._ensure_pool()
+        # Pool.connection() returns a connection context manager
+        async with pool.connection() as conn:
+            yield conn
+        # Connection automatically returned to pool when context exits
 
     def _event_to_data(self, event: Event) -> EventData:
         """Convert GitHub Event to EventData"""
@@ -77,7 +93,7 @@ class ClickHouseDatabaseService(DatabaseService):
                 async with connection.cursor() as cursor:
                     await cursor.execute(existing_query, {"event_ids": event_ids})
                     existing_result = await cursor.fetchall()
-            
+
             existing_event_ids = {row[0] for row in existing_result}
 
             logger.debug(f"Found {len(existing_result)} existing events in database")
@@ -109,7 +125,7 @@ class ClickHouseDatabaseService(DatabaseService):
         logger.debug(f"Event count before batch deduplication: {len(filtered_events)}")
         event_id_map: dict[str, Event] = {event.id: event for event in filtered_events}
         logger.debug(f"Unique event IDs in batch: {len(event_id_map)}")
-        
+
         batch_deduplicated_events = list(event_id_map.values())
 
         # Then, remove duplicates against database (keep oldest)
@@ -156,11 +172,11 @@ class ClickHouseDatabaseService(DatabaseService):
         if not event_data_list:
             return 0
 
-        # First, deduplicate within the current batch (keep oldest by ID) 
+        # First, deduplicate within the current batch (keep oldest by ID)
         logger.debug(f"Event data count before batch deduplication: {len(event_data_list)}")
         event_id_map: dict[str, EventData] = {event_data.event_id: event_data for event_data in event_data_list}
         logger.debug(f"Unique event data IDs in batch: {len(event_id_map)}")
-        
+
         batch_deduplicated_events = list(event_id_map.values())
 
         # Then filter for duplicate EventData based on event_id against database
@@ -181,10 +197,14 @@ class ClickHouseDatabaseService(DatabaseService):
             logger.debug(f"Found {len(existing_result)} existing events in database")
 
             # Filter out events that already exist (keep oldest = skip duplicates)
-            new_event_data = [event_data for event_data in batch_deduplicated_events if event_data.event_id not in existing_event_ids]
+            new_event_data = [
+                event_data for event_data in batch_deduplicated_events if event_data.event_id not in existing_event_ids
+            ]
 
             if len(new_event_data) < len(batch_deduplicated_events):
-                logger.debug(f"Filtered out {len(batch_deduplicated_events) - len(new_event_data)} duplicate events from database")
+                logger.debug(
+                    f"Filtered out {len(batch_deduplicated_events) - len(new_event_data)} duplicate events from database"
+                )
 
         except Exception as e:
             logger.warning(f"Failed to check for duplicate events: {e}")
@@ -400,24 +420,20 @@ class ClickHouseDatabaseService(DatabaseService):
         WHERE repo_name = %(repo_name)s
         ORDER BY created_at_ts DESC
         """
-        
+
         try:
             async with self._get_connection() as connection:
                 async with connection.cursor() as cursor:
                     await cursor.execute(query, {"repo_name": repo_name})
                     result = await cursor.fetchall()
-            
+
             events: List[EventInfo] = []
             for row in result:
                 event_id, action, event_type = row
-                events.append(EventInfo(
-                    event_id=event_id,
-                    action=action or "",
-                    event_type=event_type
-                ))
-            
+                events.append(EventInfo(event_id=event_id, action=action or "", event_type=event_type))
+
             return events
-            
+
         except Exception as e:
             logger.error(f"Failed to get events for repo from ClickHouse: {e}")
             return []
@@ -433,23 +449,20 @@ class ClickHouseDatabaseService(DatabaseService):
         ORDER BY event_count DESC
         LIMIT %(limit)s
         """
-        
+
         try:
             async with self._get_connection() as connection:
                 async with connection.cursor() as cursor:
                     await cursor.execute(query, {"limit": limit})
                     result = await cursor.fetchall()
-            
+
             repos: List[RepoEventCount] = []
             for row in result:
                 repo_name, event_count = row
-                repos.append(RepoEventCount(
-                    repo_name=repo_name,
-                    event_count=event_count
-                ))
-            
+                repos.append(RepoEventCount(repo_name=repo_name, event_count=event_count))
+
             return repos
-            
+
         except Exception as e:
             logger.error(f"Failed to get repos by event count from ClickHouse: {e}")
             return []
