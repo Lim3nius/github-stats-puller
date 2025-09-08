@@ -88,7 +88,7 @@ Once running, the API is available at `http://localhost:8000`:
 - **API Documentation**: `GET /docs` - Interactive Swagger/OpenAPI documentation
 - **Health Check**: `GET /health`
 - **Event Metrics**: `GET /metrics/events?offset=60` - Event counts by type for last 60 minutes
-- **PR Metrics**: `GET /metrics/pullrequest/{repo}` - Average time between PRs for repository
+- **PR Metrics**: `GET /metrics/pr-average/{repo}` - Average time between PRs for repository
 
 ** Full documentation via OpenAPI specs is available on [http://localhost:8000/docs](http://localhost:8000/docs)
 
