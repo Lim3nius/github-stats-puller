@@ -35,15 +35,17 @@ A Python service that streams GitHub events and provides REST API metrics with C
 2. **Build and run services**:
 
    ```bash
-   docker-compose build
-   docker-compose up -d
+   docker compose build
+   docker compose up -d
    ```
+
+   ⚠️ depending on docker/podman version, might need to use directly `docker-compose` ⚠️
 
 3. **Verify services are running**:
 
    ```bash
-   docker-compose ps
-   docker-compose logs github-stats
+   docker compose ps
+   docker compose logs github-stats
    ```
 
 ### Local script, DB in compose
@@ -66,15 +68,12 @@ A Python service that streams GitHub events and provides REST API metrics with C
 2. **Start ClickHouse (optional)**:
 
    ```bash
-   docker-compose up clickhouse -d
+   docker compose up clickhouse -d
    ```
 
 3. **Run locally**:
 
    ```bash
-   # With in-memory storage
-   uv run -m github_stats
-   
    # With ClickHouse backend
    export DATABASE_BACKEND=clickhouse
    uv run -m github_stats

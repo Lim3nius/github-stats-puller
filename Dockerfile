@@ -1,4 +1,7 @@
-FROM python:3.12-slim
+FROM debian:bookworm 
+
+RUN apt update && apt upgrade -y
+RUN apt install -y gcc
 
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
