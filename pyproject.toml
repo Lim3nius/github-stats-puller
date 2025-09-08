@@ -13,6 +13,7 @@ dependencies = [
     "loguru>=0.7.0",
     "python-dotenv>=1.1.1",
     "clickhouse-driver>=0.2.6",
+    "asynch>=0.3.0",
 ]
 
 # [project.scripts]
