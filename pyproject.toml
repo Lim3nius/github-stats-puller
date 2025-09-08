@@ -15,10 +15,3 @@ dependencies = [
     "clickhouse-driver>=0.2.6",
     "asynch>=0.3.0",
 ]
-
-# [project.scripts]
-# github-stats = "github_stats.main:main"
-# github-api = "github_stats.app:main"
-
-# [tool.uv]
-# package = true
