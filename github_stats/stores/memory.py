@@ -32,7 +32,7 @@ class InMemoryDatabaseService(DatabaseService):
             action=getattr(event.payload, "action", None),
         )
 
-    def insert_events(self, events: List[Event]) -> int:
+    async def insert_events(self, events: List[Event]) -> int:
         """Insert GitHub events and return count of inserted records"""
         with self._lock:
             filtered_events = [event for event in events if event.type in self.filtered_event_types]
@@ -45,7 +45,7 @@ class InMemoryDatabaseService(DatabaseService):
 
             return len(event_data_list)
 
-    def get_events_by_type_and_offset(self, offset_minutes: int) -> EventCountsByType:
+    async def get_events_by_type_and_offset(self, offset_minutes: int) -> EventCountsByType:
         """Get event counts by type within the specified time offset"""
         cutoff_time = datetime.now(timezone.utc) - timedelta(minutes=offset_minutes)
 
@@ -59,14 +59,14 @@ class InMemoryDatabaseService(DatabaseService):
 
             return EventCountsByType(offset_minutes=offset_minutes, event_counts=event_counts, total_events=total_events)
 
-    def get_pull_request_events_for_repo(self, repo_name: str) -> List[EventData]:
+    async def get_pull_request_events_for_repo(self, repo_name: str) -> List[EventData]:
         """Get all PullRequestEvent events for a specific repository"""
         with self._lock:
             return [event for event in self.events if event.event_type == "PullRequestEvent" and event.repo_name == repo_name]
 
-    def calculate_avg_pr_time(self, repo_name: str) -> float:
+    async def calculate_avg_pr_time(self, repo_name: str) -> float:
         """Calculate average time between pull requests for a repository in seconds"""
-        pr_events = self.get_pull_request_events_for_repo(repo_name)
+        pr_events = await self.get_pull_request_events_for_repo(repo_name)
 
         if len(pr_events) < 2:
             return 0.0
@@ -81,7 +81,7 @@ class InMemoryDatabaseService(DatabaseService):
 
         return sum(time_diffs) / len(time_diffs) if time_diffs else 0.0
 
-    def get_health_status(self) -> DatabaseHealth:
+    async def get_health_status(self) -> DatabaseHealth:
         """Get database connection and health information"""
         with self._lock:
             last_event_ts = None
@@ -92,15 +92,15 @@ class InMemoryDatabaseService(DatabaseService):
                 is_connected=True, backend_type="in-memory", total_events=len(self.events), last_event_ts=last_event_ts
             )
 
-    def get_events_count_by_repo(self, repo_name: str) -> int:
+    async def get_events_count_by_repo(self, repo_name: str) -> int:
         """Get total event count for a specific repository"""
         with self._lock:
             return len([event for event in self.events if event.repo_name == repo_name])
 
-    def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
+    async def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
         """Get all events for a repository - not implemented for in-memory backend"""
         raise NotImplementedError("get_events_for_repo not implemented for in-memory backend")
 
-    def get_repos_by_event_count(self, limit: int = 10) -> List[RepoEventCount]:
+    async def get_repos_by_event_count(self, limit: int = 10) -> List[RepoEventCount]:
         """Get repositories sorted by event count - not implemented for in-memory backend"""
         raise NotImplementedError("get_repos_by_event_count not implemented for in-memory backend")

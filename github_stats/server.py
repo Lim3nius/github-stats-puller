@@ -92,8 +92,8 @@ async def get_pr_average_time(repository: str) -> PullRequestMetricsResponse:
         repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
     """
     db_service = get_database_service()
-    avg_time = db_service.calculate_avg_pr_time(repository)
-    pr_events = db_service.get_pull_request_events_for_repo(repository)
+    avg_time = await db_service.calculate_avg_pr_time(repository)
+    pr_events = await db_service.get_pull_request_events_for_repo(repository)
 
     return PullRequestMetricsResponse(repository=repository, average_time_seconds=avg_time, total_pull_requests=len(pr_events))
 
@@ -101,7 +101,7 @@ async def get_pr_average_time(repository: str) -> PullRequestMetricsResponse:
 @app.get("/metrics/events", response_model=EventCountResponse)
 async def get_event_counts(offset: int = Query(..., description="Time offset in minutes")) -> EventCountResponse:
     """Get event counts by type for the given time offset"""
-    result = get_database_service().get_events_by_type_and_offset(offset)
+    result = await get_database_service().get_events_by_type_and_offset(offset)
 
     return EventCountResponse(
         offset_minutes=result.offset_minutes, event_counts=result.event_counts, total_events=result.total_events
@@ -111,7 +111,7 @@ async def get_event_counts(offset: int = Query(..., description="Time offset in 
 @app.get("/health", response_model=DatabaseHealth)
 async def get_health() -> DatabaseHealth:
     """Health check and database status"""
-    return get_database_service().get_health_status()
+    return await get_database_service().get_health_status()
 
 
 @app.get("/debug/agg-repo-events/{repository:path}")
@@ -122,7 +122,7 @@ async def get_repo_events(repository: str) -> RepoEventsResponse:
     Args:
         repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
     """
-    count = get_database_service().get_events_count_by_repo(repository)
+    count = await get_database_service().get_events_count_by_repo(repository)
     return {"repository": repository, "event_count": count}
 
 
@@ -134,7 +134,7 @@ async def get_repo_events_list(repository: str) -> List[EventInfo]:
     Args:
         repository: Repository name in format 'owner/repo' (e.g., 'facebook/react')
     """
-    return get_database_service().get_events_for_repo(repository)
+    return await get_database_service().get_events_for_repo(repository)
 
 
 @app.get("/debug/repos-by-event-count")
@@ -145,7 +145,7 @@ async def get_repos_by_event_count(limit: int = Query(10, description="Maximum n
     Args:
         limit: Maximum number of repositories to return (default: 10)
     """
-    return get_database_service().get_repos_by_event_count(limit)
+    return await get_database_service().get_repos_by_event_count(limit)
 
 
 if __name__ == "__main__":

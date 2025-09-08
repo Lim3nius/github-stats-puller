@@ -9,7 +9,8 @@ from loguru import logger
 
 from .base import DatabaseService, EventData, EventCountsByType, DatabaseHealth, EventInfo, RepoEventCount
 
-from clickhouse_driver import Client
+from asynch import Connection
+from contextlib import asynccontextmanager
 
 
 class ClickHouseDatabaseService(DatabaseService):
@@ -24,15 +25,29 @@ class ClickHouseDatabaseService(DatabaseService):
         database: str = "github_stats",
     ):
         self.filtered_event_types = {"WatchEvent", "PullRequestEvent", "IssuesEvent"}
+        self.host = host
+        self.port = port
+        self.username = username
+        self.password = password
+        self.database = database
 
+    @asynccontextmanager
+    async def _get_connection(self):
+        """Create a new async ClickHouse connection with context manager"""
+        connection = None
         try:
-            self.client = Client(host=host, port=port, user=username, password=password, database=database)
-            # Test connection
-            self.client.execute("SELECT 1")
-            logger.info(f"Connected to ClickHouse at {host}:{port}")
-        except Exception as e:
-            logger.error(f"Failed to connect to ClickHouse: {e}")
-            raise
+            connection = Connection(
+                host=self.host,
+                port=self.port,
+                user=self.username,
+                password=self.password,
+                database=self.database
+            )
+            await connection.connect()
+            yield connection
+        finally:
+            if connection:
+                await connection.close()
 
     def _event_to_data(self, event: Event) -> EventData:
         """Convert GitHub Event to EventData"""
@@ -45,7 +60,7 @@ class ClickHouseDatabaseService(DatabaseService):
             action=getattr(event.payload, "action", None),
         )
 
-    def _filter_duplicate_events(self, events: List[Event]) -> List[Event]:
+    async def _filter_duplicate_events(self, events: List[Event]) -> List[Event]:
         """Filter out events that already exist in database (keep oldest)"""
         if not events:
             return []
@@ -58,7 +73,11 @@ class ClickHouseDatabaseService(DatabaseService):
         """
 
         try:
-            existing_result = self.client.execute(existing_query, {"event_ids": event_ids})
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(existing_query, {"event_ids": event_ids})
+                    existing_result = await cursor.fetchall()
+            
             existing_event_ids = {row[0] for row in existing_result}
 
             logger.debug(f"Found {len(existing_result)} existing events in database")
@@ -76,7 +95,7 @@ class ClickHouseDatabaseService(DatabaseService):
             # Fallback to returning all events if deduplication check fails
             return events
 
-    def insert_events(self, events: List[Event]) -> int:
+    async def insert_events(self, events: List[Event]) -> int:
         """Insert GitHub events and return count of inserted records (deduplicates to keep oldest)"""
         if not events:
             return 0
@@ -94,7 +113,7 @@ class ClickHouseDatabaseService(DatabaseService):
         batch_deduplicated_events = list(event_id_map.values())
 
         # Then, remove duplicates against database (keep oldest)
-        new_events = self._filter_duplicate_events(batch_deduplicated_events)
+        new_events = await self._filter_duplicate_events(batch_deduplicated_events)
 
         if not new_events:
             logger.debug("All events already exist, skipping duplicates")
@@ -118,10 +137,12 @@ class ClickHouseDatabaseService(DatabaseService):
             )
 
         try:
-            self.client.execute(
-                "INSERT INTO events (event_id, event_type, repo_name, repo_id, created_at_ts, action, ingested_at) VALUES",
-                rows,
-            )
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(
+                        "INSERT INTO events (event_id, event_type, repo_name, repo_id, created_at_ts, action, ingested_at) VALUES",
+                        rows,
+                    )
 
             logger.debug(f"Inserted {len(event_data_list)} events into ClickHouse")
             return len(event_data_list)
@@ -130,7 +151,7 @@ class ClickHouseDatabaseService(DatabaseService):
             logger.error(f"Failed to insert events into ClickHouse: {e}")
             raise
 
-    def insert_event_data(self, event_data_list: List[EventData]) -> int:
+    async def insert_event_data(self, event_data_list: List[EventData]) -> int:
         """Insert EventData objects directly and return count of inserted records"""
         if not event_data_list:
             return 0
@@ -151,7 +172,10 @@ class ClickHouseDatabaseService(DatabaseService):
         """
 
         try:
-            existing_result = self.client.execute(existing_query, {"event_ids": event_ids})
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(existing_query, {"event_ids": event_ids})
+                    existing_result = await cursor.fetchall()
             existing_event_ids = {row[0] for row in existing_result}
 
             logger.debug(f"Found {len(existing_result)} existing events in database")
@@ -187,10 +211,12 @@ class ClickHouseDatabaseService(DatabaseService):
             )
 
         try:
-            self.client.execute(
-                "INSERT INTO events (event_id, event_type, repo_name, repo_id, created_at_ts, action, ingested_at) VALUES",
-                rows,
-            )
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(
+                        "INSERT INTO events (event_id, event_type, repo_name, repo_id, created_at_ts, action, ingested_at) VALUES",
+                        rows,
+                    )
 
             logger.debug(f"Inserted {len(new_event_data)} events into ClickHouse")
             return len(new_event_data)
@@ -199,7 +225,7 @@ class ClickHouseDatabaseService(DatabaseService):
             logger.error(f"Failed to insert events into ClickHouse: {e}")
             raise
 
-    def get_events_by_type_and_offset(self, offset_minutes: int) -> EventCountsByType:
+    async def get_events_by_type_and_offset(self, offset_minutes: int) -> EventCountsByType:
         """Get event counts by type within the specified time offset"""
         query = """
         SELECT 
@@ -211,7 +237,10 @@ class ClickHouseDatabaseService(DatabaseService):
         """
 
         try:
-            result = self.client.execute(query, {"offset_minutes": offset_minutes})
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(query, {"offset_minutes": offset_minutes})
+                    result = await cursor.fetchall()
 
             event_counts = {}
             for row in result:
@@ -226,7 +255,7 @@ class ClickHouseDatabaseService(DatabaseService):
             logger.error(f"Failed to get event counts from ClickHouse: {e}")
             raise
 
-    def get_pull_request_events_for_repo(self, repo_name: str) -> List[EventData]:
+    async def get_pull_request_events_for_repo(self, repo_name: str) -> List[EventData]:
         """Get minimal PR event data - only timestamps needed for calculations"""
         # First try to get from aggregated table for count
         count_query = """
@@ -246,7 +275,10 @@ class ClickHouseDatabaseService(DatabaseService):
         """
 
         try:
-            result = self.client.execute(events_query, {"repo_name": repo_name})
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(events_query, {"repo_name": repo_name})
+                    result = await cursor.fetchall()
             logger.debug(f"received {len(result)} PR timestamps")
 
             # Return minimal EventData - only timestamps are actually used
@@ -270,7 +302,7 @@ class ClickHouseDatabaseService(DatabaseService):
             logger.error(f"Failed to get PR events from ClickHouse: {e}")
             raise
 
-    def calculate_avg_pr_time(self, repo_name: str) -> float:
+    async def calculate_avg_pr_time(self, repo_name: str) -> float:
         """Calculate average time between pull requests using pre-aggregated data"""
         # Use the pre-aggregated pr_metrics_agg table for faster calculation
         query = """
@@ -283,7 +315,10 @@ class ClickHouseDatabaseService(DatabaseService):
         """
 
         try:
-            result = self.client.execute(query, {"repo_name": repo_name})
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(query, {"repo_name": repo_name})
+                    result = await cursor.fetchall()
 
             if result and result[0][0] and result[0][0] > 1:
                 total_prs = result[0][0]
@@ -300,7 +335,7 @@ class ClickHouseDatabaseService(DatabaseService):
         except Exception as e:
             logger.error(f"Failed to calculate avg PR time from aggregated data: {e}")
             # Fallback to raw events table if aggregated data fails
-            pr_events = self.get_pull_request_events_for_repo(repo_name)
+            pr_events = await self.get_pull_request_events_for_repo(repo_name)
 
             if len(pr_events) < 2:
                 return 0.0
@@ -312,19 +347,25 @@ class ClickHouseDatabaseService(DatabaseService):
 
             return sum(time_diffs) / len(time_diffs) if time_diffs else 0.0
 
-    def get_health_status(self) -> DatabaseHealth:
+    async def get_health_status(self) -> DatabaseHealth:
         """Get database connection and health information"""
         try:
-            # Test connection
-            self.client.execute("SELECT 1")
+            # Test connection and get metrics
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute("SELECT 1")
 
-            # Get total events
-            total_result = self.client.execute("SELECT count(*) FROM events")
-            total_events = total_result[0][0] if total_result else 0
+                # Get total events
+                async with connection.cursor() as cursor:
+                    await cursor.execute("SELECT count(*) FROM events")
+                    total_result = await cursor.fetchall()
+                total_events = total_result[0][0] if total_result else 0
 
-            # Get latest event timestamp
-            latest_result = self.client.execute("SELECT max(created_at_ts) FROM events")
-            last_event_ts = latest_result[0][0] if latest_result else None
+                # Get latest event timestamp
+                async with connection.cursor() as cursor:
+                    await cursor.execute("SELECT max(created_at_ts) FROM events")
+                    latest_result = await cursor.fetchall()
+                last_event_ts = latest_result[0][0] if latest_result else None
 
             return DatabaseHealth(
                 is_connected=True, backend_type="clickhouse", total_events=total_events, last_event_ts=last_event_ts
@@ -334,18 +375,21 @@ class ClickHouseDatabaseService(DatabaseService):
             logger.error(f"ClickHouse health check failed: {e}")
             return DatabaseHealth(is_connected=False, backend_type="clickhouse", total_events=0, last_event_ts=None)
 
-    def get_events_count_by_repo(self, repo_name: str) -> int:
+    async def get_events_count_by_repo(self, repo_name: str) -> int:
         """Get total event count for a specific repository"""
         try:
-            result = self.client.execute(
-                "SELECT count(*) FROM events WHERE repo_name = %(repo_name)s", {"repo_name": repo_name}
-            )
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(
+                        "SELECT count(*) FROM events WHERE repo_name = %(repo_name)s", {"repo_name": repo_name}
+                    )
+                    result = await cursor.fetchall()
             return result[0][0] if result else 0
         except Exception as e:
             logger.error(f"Failed to get repo event count from ClickHouse: {e}")
             return 0
 
-    def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
+    async def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
         """Get all events for a repository with event_id, action, event_type"""
         query = """
         SELECT 
@@ -358,7 +402,10 @@ class ClickHouseDatabaseService(DatabaseService):
         """
         
         try:
-            result = self.client.execute(query, {"repo_name": repo_name})
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(query, {"repo_name": repo_name})
+                    result = await cursor.fetchall()
             
             events: List[EventInfo] = []
             for row in result:
@@ -375,7 +422,7 @@ class ClickHouseDatabaseService(DatabaseService):
             logger.error(f"Failed to get events for repo from ClickHouse: {e}")
             return []
 
-    def get_repos_by_event_count(self, limit: int = 10) -> List[RepoEventCount]:
+    async def get_repos_by_event_count(self, limit: int = 10) -> List[RepoEventCount]:
         """Get repositories sorted by event count (descending) with optional limit"""
         query = """
         SELECT 
@@ -388,7 +435,10 @@ class ClickHouseDatabaseService(DatabaseService):
         """
         
         try:
-            result = self.client.execute(query, {"limit": limit})
+            async with self._get_connection() as connection:
+                async with connection.cursor() as cursor:
+                    await cursor.execute(query, {"limit": limit})
+                    result = await cursor.fetchall()
             
             repos: List[RepoEventCount] = []
             for row in result:

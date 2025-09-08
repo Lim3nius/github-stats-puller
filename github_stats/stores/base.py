@@ -86,41 +86,41 @@ class DatabaseService(ABC):
     """Abstract base class for database operations"""
 
     @abstractmethod
-    def insert_events(self, events: list[Event]) -> int:
+    async def insert_events(self, events: list[Event]) -> int:
         """Insert GitHub events and return count of inserted records"""
         pass
 
     @abstractmethod
-    def get_events_by_type_and_offset(self, offset_minutes: int) -> EventCountsByType:
+    async def get_events_by_type_and_offset(self, offset_minutes: int) -> EventCountsByType:
         """Get event counts by type within the specified time offset"""
         pass
 
     @abstractmethod
-    def get_pull_request_events_for_repo(self, repo_name: str) -> List[EventData]:
+    async def get_pull_request_events_for_repo(self, repo_name: str) -> List[EventData]:
         """Get all PullRequestEvent events for a specific repository"""
         pass
 
     @abstractmethod
-    def calculate_avg_pr_time(self, repo_name: str) -> float:
+    async def calculate_avg_pr_time(self, repo_name: str) -> float:
         """Calculate average time between pull requests for a repository in seconds"""
         pass
 
     @abstractmethod
-    def get_health_status(self) -> DatabaseHealth:
+    async def get_health_status(self) -> DatabaseHealth:
         """Get database connection and health information"""
         pass
 
     @abstractmethod
-    def get_events_count_by_repo(self, repo_name: str) -> int:
+    async def get_events_count_by_repo(self, repo_name: str) -> int:
         """Get total event count for a specific repository"""
         pass
 
     @abstractmethod
-    def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
+    async def get_events_for_repo(self, repo_name: str) -> List[EventInfo]:
         """Get all events for a repository with event_id, action, event_type"""
         pass
 
     @abstractmethod
-    def get_repos_by_event_count(self, limit: int = 10) -> List[RepoEventCount]:
+    async def get_repos_by_event_count(self, limit: int = 10) -> List[RepoEventCount]:
         """Get repositories sorted by event count (descending) with optional limit"""
         pass

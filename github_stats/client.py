@@ -7,6 +7,7 @@ from loguru import logger
 from github import Github
 from github.Event import Event
 import time
+import asyncio
 
 from github_stats.models import ClientState
 from github_stats.stores import get_database_service
@@ -118,7 +119,7 @@ class GitHubEventsClient:
                 logger.debug(f"Downloaded {len(events)} events (file saving disabled)")
 
             # Store events in database for server access (deduplication handled by database service)
-            inserted_count = get_database_service().insert_events(events)
+            inserted_count = asyncio.run(get_database_service().insert_events(events))
             logger.info(f"Inserted {inserted_count} events into database")
 
             self._save_state()
