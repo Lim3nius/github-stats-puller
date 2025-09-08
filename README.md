@@ -25,7 +25,7 @@ A Python service that streams GitHub events and provides REST API metrics with C
 1. **Clone and setup environment**:
 
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/Lim3nius/github-stats-puller.git
    cd github-api-stats-puller
    
    # Optional: Set GitHub token for higher rate limits
