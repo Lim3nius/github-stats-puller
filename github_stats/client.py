@@ -8,6 +8,7 @@ from github import Github
 from github.Event import Event
 import time
 import asyncio
+import httpx
 
 from github_stats.models import ClientState
 from github_stats.stores import get_database_service
@@ -40,8 +41,21 @@ class GitHubEventsClient:
         self.state = self._load_state()
 
         logger.debug(
-            f"Initialized PyGitHub client with state file: {self.state_file}, poll interval: {self.state.poll_interval_sec}s"
+            f"Initialized PyGitHub client with state file: {self.state_file}, time of next poll: {self.state.next_poll_time_ts}"
         )
+
+    def sleep_till_poll_time(self):
+        """Sleeps till next poll_time based on next_poll_ime_ts"""
+        now = datetime.now(timezone.utc)
+
+        assert self.state.next_poll_time_ts, "expected poll time, but it was not set"
+
+        if self.state.next_poll_time_ts > now:
+            wait_time_sec: float = (self.state.next_poll_time_ts - now).total_seconds()
+            logger.info(f"Waiting {wait_time_sec:.1f} seconds until next poll time")
+            time.sleep(wait_time_sec)
+        else:
+            logger.info("next poll time is in history, no sleeping now")
 
     def _load_state(self) -> ClientState:
         if self.state_file.exists():
@@ -78,14 +92,41 @@ class GitHubEventsClient:
         except Exception as e:
             logger.warning(f"Could not check rate limit: {e}")
 
-    def _get_public_events(self) -> List[Event]:
-        """Get public events using PyGitHub"""
+    def get_poll_interval(self) -> int:
+        """Get poll interval from GitHub's X-Poll-Interval header via HEAD request"""
+        try:
+            token = os.getenv("GITHUB_TOKEN")
+            headers = {"Accept": "application/vnd.github+json"}
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+
+            response = httpx.head("https://api.github.com/events", headers=headers)
+
+            # Check for X-Poll-Interval header
+            poll_interval = response.headers.get("X-Poll-Interval")
+            if not poll_interval:
+                logger.debug("No X-Poll-Interval header found, using default")
+                return 60  # Default fallback
+
+            interval_sec = int(poll_interval)
+            logger.debug(f"Got poll interval from GitHub headers: {interval_sec}s")
+            return interval_sec
+
+        except Exception as e:
+            logger.warning(f"Could not get poll interval from headers: {e}")
+            return 60  # Default fallback
+
+    def _get_public_events(self) -> tuple[List[Event], int]:
+        """Get public events using PyGitHub and returns time in seconds till next poll interval"""
         try:
             # PyGitHub doesn't support conditional requests directly,
             # but we can still fetch events and compare timestamps
             events = list(self.github.get_events())
 
-            return events
+            # Get poll interval from GitHub's headers after fetching events
+            github_poll_interval = self.get_poll_interval()
+
+            return (events, github_poll_interval)
 
         except Exception as e:
             logger.error(f"Error getting public events: {e}")
@@ -98,19 +139,14 @@ class GitHubEventsClient:
         self._check_rate_limit()
 
         try:
-            events = self._get_public_events()
+            events, poll_after_sec = self._get_public_events()
+            poll_ts = datetime.now(timezone.utc)
+            self.state.next_poll_time_ts = poll_ts + timedelta(seconds=poll_after_sec)
 
             if not events:
                 logger.debug("No events available")
-                poll_ts = datetime.now(timezone.utc)
-                self.state.last_poll = poll_ts
-                self.state.next_poll_time_ts = poll_ts + timedelta(seconds=self.state.poll_interval_sec)
                 self._save_state()
                 return []
-
-            poll_ts = datetime.now(timezone.utc)
-            self.state.last_poll = poll_ts
-            self.state.next_poll_time_ts = poll_ts + timedelta(seconds=self.state.poll_interval_sec)
 
             # Save events to files only if enabled
             if self.save_to_files:

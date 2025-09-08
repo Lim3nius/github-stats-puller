@@ -3,7 +3,6 @@ import time
 import uvicorn
 import os
 import sys
-from datetime import datetime, timezone
 from dotenv import load_dotenv
 from loguru import logger
 
@@ -25,18 +24,14 @@ def run_client_polling():
 
     # Check if we need to wait before first poll
     if client.state.next_poll_time_ts:
-        now = datetime.now(timezone.utc)
-        if client.state.next_poll_time_ts > now:
-            wait_time_sec = (client.state.next_poll_time_ts - now).total_seconds()
-            logger.info(f"Waiting {wait_time_sec:.1f} seconds until next poll time")
-            time.sleep(wait_time_sec)
+        client.sleep_till_poll_time()
 
     while True:
         try:
             events = client.poll_events()
             if events:
                 logger.info(f"Client downloaded {len(events)} events")
-            time.sleep(client.state.poll_interval_sec)
+            client.sleep_till_poll_time()
         except Exception as e:
             logger.error(f"Error in client polling: {e}")
             time.sleep(60)  # Wait 1 minute before retrying
