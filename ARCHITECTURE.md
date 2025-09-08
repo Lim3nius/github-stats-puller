@@ -34,7 +34,7 @@ The GitHub Events Statistics Puller is a containerized Python application that m
 └─────────────────┘
 ```
 
-### C4 Architecture Diagram
+### C4 Architecture Diagram with mermaid
 
 ```mermaid
 graph TB
@@ -103,6 +103,7 @@ graph TB
   - `event_type`: WatchEvent, PullRequestEvent, IssuesEvent
   - `created_at`: Event timestamp
   - `action`: Event action (opened, closed, etc.) for PR/Issues events
+  - some metadata (`event_id`, `ingested_at`, `repo_id`)
 
 ### 3. API Layer
 
@@ -324,6 +325,7 @@ ORDER BY (repo_name, hour_bucket);
 #### Materialized View: `pr_metrics_mv`
 
 Automatically populates `pr_metrics_agg` from new events:
+
 - Filters for `PullRequestEvent` with `action = 'opened'`
 - Aggregates into hourly buckets for efficient queries
 - Maintains running totals and time boundaries
@@ -337,34 +339,6 @@ Automatically populates `pr_metrics_agg` from new events:
 - LowCardinality for action field optimization
 - **Deduplication-optimized primary key**: `event_id` first in ORDER BY for fast duplicate lookups (~1-5ms)
 - **Application-level deduplication**: Keeps oldest version of duplicate events
-
-## Data Quality & Deduplication
-
-### Duplicate Prevention Strategy
-
-**Problem**: GitHub API may return duplicate events in overlapping polls, leading to inflated metrics.
-
-**Solution**: Centralized two-layer deduplication in ClickHouse database service:
-
-1. **Batch-Level Deduplication**:
-   - Removes duplicates within each incoming event batch using `event_id_map`
-   - Keeps oldest event when multiple events share the same ID
-   - Reduces database queries by eliminating obvious duplicates first
-
-2. **Database-Level Deduplication**:
-   - Schema optimization: `ORDER BY (event_id, repo_name, event_type, created_at_ts)`
-   - Places `event_id` first for optimal duplicate lookup performance (~1-5ms)
-   - Before each insert: `SELECT DISTINCT event_id FROM events WHERE event_id IN (...)`
-   - Filters out existing events to keep oldest version only
-   - ~1-3% performance overhead per 300-event batch
-   - Graceful fallback if duplicate check fails
-
-**Benefits**:
-- **Centralized Logic**: All deduplication handled in ClickHouse service layer
-- **Consistent Strategy**: Same approach for real-time polling and historical backfill
-- **Performance Optimized**: Batch-level deduplication reduces database load, ~1-3% overhead
-- **Data Accuracy**: Guaranteed accurate metrics with predictable "oldest wins" policy
-- **Fast Detection**: Optimized primary key for ~1-5ms duplicate lookups
 
 ## Configuration
 
@@ -390,25 +364,3 @@ Automatically populates `pr_metrics_agg` from new events:
 - `--dry-run` - Preview processing without database changes
 - Requires `DATABASE_BACKEND=clickhouse` environment variable
 - Uses same ClickHouse configuration as main application
-
-## Monitoring and Debugging
-
-### Logging Strategy
-
-- Structured logging with loguru
-- Configurable log levels via environment
-- Request/response logging for API endpoints
-- Database query logging for performance monitoring
-
-### Health Checks
-
-- Database connectivity verification
-- GitHub API rate limit monitoring
-- Event processing throughput tracking
-- Memory usage for in-flight data
-
-### Debugging Endpoints
-
-- Repository statistics for data verification
-- Event count validation
-- Historical data integrity checks
