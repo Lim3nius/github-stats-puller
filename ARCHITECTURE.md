@@ -117,7 +117,7 @@ graph TB
 
 **Responsibilities:**
 
-- GitHub API authentication and rate limiting via PyGitHub
+- GitHub API authentication and rate limiting checking via PyGitHub (also nicely typed events data)
 - Time-based polling with intelligent scheduling
 - Event polling with configurable intervals
 - Raw event persistence to JSON files
@@ -125,18 +125,11 @@ graph TB
 
 **Key Features:**
 
-- PyGitHub-based rate limit monitoring with conservative thresholds
 - **Hybrid HTTP approach**: PyGitHub for event fetching + httpx HEAD requests for poll interval headers
 - Dynamic poll interval adjustment via GitHub's `X-Poll-Interval` header
 - Time-based state persistence via `client-state.json` for restart resilience
 - Intelligent polling scheduling (avoids immediate polling on restart)
 - Thread-safe operation
-
-**Rate Limiting Strategy:**
-
-- Uses `github.get_rate_limit()` to check API limits before each poll
-- Conservative threshold: sleeps when < 10 requests remaining
-- Respects rate limit reset times with buffer
 
 **State Management:**
 
@@ -207,7 +200,6 @@ This hybrid approach ensures compliance with GitHub's dynamic rate limiting whil
 
 - `GET /metrics/pr-average/{repository:path}` - PR timing metrics (supports owner/repo format)
 - `GET /metrics/events?offset=N` - Event counts with time filtering
-- `GET /metrics/visualization` - Data for charts/graphs
 - `GET /health` - Database health and connection status
 - `GET /debug/total-events` - Total event count
 - `GET /debug/repo-events/{repository:path}` - Repository event count

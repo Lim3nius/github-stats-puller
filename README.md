@@ -52,8 +52,7 @@ A Python service that streams GitHub events and provides REST API metrics with C
 
 #### Prerequisites
 
-- Python 3.12+
-- [uv](https://docs.astral.sh/uv/) package manager
+- [uv](https://docs.astral.sh/uv/) package manager (downloads it's own python interpreter)
 - Docker and Docker Compose installed
 - Optional: GitHub Personal Access Token for higher rate limits
 
@@ -90,7 +89,7 @@ Once running, the API is available at `http://localhost:8000`:
 - **Event Metrics**: `GET /metrics/events?offset=60` - Event counts by type for last 60 minutes
 - **PR Metrics**: `GET /metrics/pr-average/{repo}` - Average time between PRs for repository
 
-** Full documentation via OpenAPI specs is available on [http://localhost:8000/docs](http://localhost:8000/docs)
+**⚠️ Full documentation via OpenAPI specs is available on [http://localhost:8000/docs](http://localhost:8000/docs)** 
 
 ### Debug Endpoints
 
@@ -139,7 +138,7 @@ Main architecture overview is in [ACHITECTURE.md](/ARCHITECTURE.md)
 ## Data Persistence
 
 - **Events**: Raw GitHub events stored in ClickHouse and JSON backup files
-- **Client State**: ETag, poll intervals, and next poll time persisted across restarts
+- **Client State**: next poll time persisted across restarts
 - **Rate Limiting**: Respects GitHub API X-Poll-Interval headers
 
 ## Backfill Tool
