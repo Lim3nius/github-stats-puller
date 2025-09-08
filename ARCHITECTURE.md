@@ -2,15 +2,15 @@
 
 ## System Architecture
 
-The GitHub Events Statistics Puller is a Python application that monitors GitHub public events and provides REST API metrics. The system follows a layered architecture with clear separation of concerns.
+The GitHub Events Statistics Puller is a containerized Python application that monitors GitHub public events and provides REST API metrics.
 
 ### High-Level Components
 
 ```txt
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   GitHub API    │    │  FastAPI Server │    │   Client Apps   │
-│                 │    │                 │    │                 │
-└─────────┬───────┘    └─────────┬───────┘    └─────────────────┘
+┌─────────────────┐    ┌─────────────────┐
+│   GitHub API    │    │  FastAPI Server │
+│                 │    │                 │
+└─────────┬───────┘    └─────────┬───────┘
           │                      │
           │ HTTP Events          │ REST API
           │                      │
@@ -103,22 +103,25 @@ The GitHub Events Statistics Puller is a Python application that monitors GitHub
 **Implementation Details:**
 
 - **ClickHouseDatabaseService**: Production backend using ClickHouse
+  - **Async Architecture**: Full async/await implementation using `asynch` library for non-blocking database operations
+  - **Thread-Safe Connection Pooling**: Separate connection pools per event loop to handle multi-threaded access (client + server)
+  - **Connection Management**: Context manager pattern with `@asynccontextmanager` for automatic resource cleanup
   - Uses pre-aggregated `pr_metrics_agg` table for PR calculations
   - Fetches only required fields (e.g., timestamps) to minimize data transfer
   - **Two-Level Deduplication**: 
     1. Batch-level: Removes duplicates within incoming event batches
     2. Database-level: Checks existing event_ids before insert to keep oldest version
-  - **Performance**: ~1-3% overhead per batch, ~1-5ms duplicate lookups
+  - **Performance**: ~1-3% overhead per batch, ~1-5ms duplicate lookups, connection pooling reduces connection overhead
   - Fallback to raw events table if aggregated data unavailable
-- **InMemoryDatabaseService**: Development/testing backend with thread-safe operations
+- **InMemoryDatabaseService**: Development/testing backend with async operations and thread-safe data structures
 
-**Core Methods:**
+**Core Methods (All Async):**
 
-- `insert_events(events)` - Insert filtered event data
-- `calculate_avg_pr_time(repo)` - Uses pre-aggregated data for fast PR metrics
-- `get_events_by_type_and_offset(minutes)` - Optimized event counts by type
-- `get_health_status()` - Database connection and health monitoring
-- `get_pull_request_events_for_repo(repo)` - Minimal data fetch (timestamps only)
+- `async insert_events(events)` - Insert filtered event data with async database operations
+- `async calculate_avg_pr_time(repo)` - Uses pre-aggregated data for fast PR metrics
+- `async get_events_by_type_and_offset(minutes)` - Optimized event counts by type
+- `async get_health_status()` - Database connection and health monitoring
+- `async get_pull_request_events_for_repo(repo)` - Minimal data fetch (timestamps only)
 
 ### FastAPI Server (github_stats/server.py)
 
@@ -185,9 +188,9 @@ The GitHub Events Statistics Puller is a Python application that monitors GitHub
 
 **Execution Model:**
 
-- Client runs in background daemon thread
-- Server runs in main thread
-- Shared DatabaseService instance for data access
+- Client runs in background daemon thread with asyncio.run() for database operations
+- Server runs in main thread with async endpoints
+- Shared DatabaseService instance with thread-safe connection pooling per event loop
 
 ## Deployment Architecture
 
@@ -208,14 +211,14 @@ The GitHub Events Statistics Puller is a Python application that monitors GitHub
 │  ┌─────────▼───────┐               │
 │  │   ClickHouse    │               │
 │  │  (Docker)       │               │
-│  │  Port: 8123     │               │
+│  │  Port: 9000     │               │
 │  └─────────────────┘               │
 └─────────────────────────────────────┘
 ```
 
-### Production Considerations
+### Production Deployment
 
-- Both application and ClickHouse can be containerized
+- Fully containerized with Docker Compose orchestration
 - Volume mounts for persistent data storage
 - Environment-based configuration
 - Health checks and monitoring endpoints
@@ -292,18 +295,12 @@ Automatically populates `pr_metrics_agg` from new events:
    - ~1-3% performance overhead per 300-event batch
    - Graceful fallback if duplicate check fails
 
-**Architecture Benefits**:
+**Benefits**:
 - **Centralized Logic**: All deduplication handled in ClickHouse service layer
 - **Consistent Strategy**: Same approach for real-time polling and historical backfill
-- **Performance Optimized**: Batch-level deduplication reduces database load
-- **Maintainable**: Single location for deduplication logic and policies
-
-**Benefits**:
-- Guaranteed data accuracy for metrics calculations
-- Predictable "oldest wins" deduplication policy  
-- Fast duplicate detection using primary key optimization
-- Minimal performance impact on polling cycle
-- Consistent behavior across all data ingestion paths
+- **Performance Optimized**: Batch-level deduplication reduces database load, ~1-3% overhead
+- **Data Accuracy**: Guaranteed accurate metrics with predictable "oldest wins" policy
+- **Fast Detection**: Optimized primary key for ~1-5ms duplicate lookups
 
 ## Configuration
 
@@ -321,7 +318,6 @@ Automatically populates `pr_metrics_agg` from new events:
 - `uv run backfill_events.py` - Historical data backfill tool - **ClickHouse ONLY**
 - Module-based execution following Python best practices
 - Absolute imports throughout codebase
-- Legacy entry points removed in favor of module execution
 
 ### Backfill Tool Configuration
 

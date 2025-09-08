@@ -7,7 +7,7 @@ A Python service that streams GitHub events and provides REST API metrics with C
 - **Real-time GitHub Events Streaming**: Polls GitHub Events API with smart ETag caching and rate limiting
 - **Event Filtering**: Focuses on WatchEvent, PullRequestEvent, and IssuesEvent
 - **REST API Metrics**: Calculate average PR times and event counts by type
-- **ClickHouse Integration**: High-performance database backend for event storage
+- **ClickHouse Integration**: High-performance async database backend with connection pooling
 - **Persistent State**: Maintains client state and respects GitHub API rate limits across restarts
 - **Docker Support**: Full containerization with docker-compose orchestration
 
@@ -131,9 +131,9 @@ I created some events which helped me debug peculiarities and bugs.
 The application consists of:
 
 - **GitHub Events Client**: Polls GitHub Events API with intelligent caching
-- **FastAPI Server**: Provides REST API endpoints for metrics
-- **ClickHouse Database**: High-performance analytics database
-- **DatabaseService Abstraction**: Pluggable storage backends
+- **FastAPI Server**: Provides async REST API endpoints for metrics
+- **ClickHouse Database**: High-performance analytics database with async operations
+- **DatabaseService Abstraction**: Pluggable async storage backends with thread-safe connection pooling
 
 Main architecture overview is in [ACHITECTURE.md](/ARCHITECTURE.md)
 
