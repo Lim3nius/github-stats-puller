@@ -34,6 +34,57 @@ The GitHub Events Statistics Puller is a containerized Python application that m
 └─────────────────┘
 ```
 
+### C4 Architecture Diagram
+
+```mermaid
+graph TB
+    subgraph " "
+        User[API Consumer]
+        GitHub[(GitHub API)]
+    end
+    
+    subgraph "Application Layer"
+        Client[GitHub Client<br/>PyGitHub + httpx + AsyncIO<br/><br/>📋 Features:<br/>• X-Poll-Interval header support<br/>• Rate limit monitoring<br/>• Event filtering<br/>• State persistence]
+        Server[Uvicorn Server<br/>FastAPI<br/><br/>📋 Features:<br/>• Async REST endpoints<br/>• Health checks<br/>• Metrics aggregation]
+        DB[Database Abstraction<br/>Async Layer<br/><br/>📋 Features:<br/>• Thread-safe connection pools<br/>• Two-level deduplication<br/>• Context managers]
+    end
+    
+    subgraph "Storage Layer"
+        ClickHouse[(ClickHouse Database<br/><br/>📋 Optimizations:<br/>• Pre-aggregated tables<br/>• Materialized views<br/>• Time-based partitioning)]
+    end
+
+    Client -->|HTTPS/REST<br/>Polls /events every X-Poll-Interval seconds| GitHub
+    Client -->|"asyncio.run()"<br/>Inserts filtered events| DB
+    Server -->|await<br/>Queries metrics| DB
+    DB -->|asynch Pool<br/>Async queries with pooling| ClickHouse
+    User -->|HTTP/REST<br/>GET /metrics/*, /health| Server
+
+    classDef external fill:#e1f5fe,stroke:#0277bd,stroke-width:2px
+    classDef component fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+    classDef database fill:#e8f5e8,stroke:#388e3c,stroke-width:2px
+    
+    class User,GitHub external
+    class Client,Server,DB component
+    class ClickHouse database
+```
+
+**Component Details:**
+
+- **GitHub Client**: 
+  - Hybrid approach: PyGitHub for events + httpx for X-Poll-Interval headers
+  - Dynamic polling (60s default, respects GitHub recommendations)
+  - Rate limit monitoring, state persistence, event filtering
+
+- **Database Abstraction**: 
+  - Thread-safe connection pools per event loop
+  - Two-level deduplication (batch + database)
+  - Pre-aggregated metrics for performance
+
+- **ClickHouse**: 
+  - Pre-aggregated pr_metrics_agg table
+  - Materialized views, time-based partitioning
+  - Optimized for analytics queries
+
 ## Data Flow
 
 ### 1. Event Ingestion
@@ -74,6 +125,8 @@ The GitHub Events Statistics Puller is a containerized Python application that m
 **Key Features:**
 
 - PyGitHub-based rate limit monitoring with conservative thresholds
+- **Hybrid HTTP approach**: PyGitHub for event fetching + httpx HEAD requests for poll interval headers
+- Dynamic poll interval adjustment via GitHub's `X-Poll-Interval` header
 - Time-based state persistence via `client-state.json` for restart resilience
 - Intelligent polling scheduling (avoids immediate polling on restart)
 - Thread-safe operation
@@ -88,8 +141,19 @@ The GitHub Events Statistics Puller is a containerized Python application that m
 
 - Persists `next_poll_time_ts`, `poll_interval_sec`, `last_successful_poll_ts` in `client-state.json`
 - On startup: polls immediately if `next_poll_time_ts` has passed, otherwise waits
-- After each poll: schedules next poll based on interval
+- After each poll: schedules next poll based on GitHub's recommended interval
 - No ETag functionality (PyGitHub limitation)
+
+**Hybrid HTTP Implementation:**
+
+GitHub's Events API returns an `X-Poll-Interval` header indicating the recommended polling frequency, but PyGitHub doesn't expose HTTP headers. To work around this limitation:
+
+1. **PyGitHub**: Fetches events using `github.get_events()`
+2. **httpx HEAD request**: Makes separate HEAD request to `/events` endpoint to extract `X-Poll-Interval` header
+3. **Dynamic adjustment**: Updates poll interval in real-time based on GitHub's recommendations
+4. **Fallback**: Uses 60-second default if header is unavailable
+
+This hybrid approach ensures compliance with GitHub's dynamic rate limiting while maintaining PyGitHub's convenient event parsing.
 
 ### DatabaseService (github_stats/stores/)
 
